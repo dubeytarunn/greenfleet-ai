@@ -128,6 +128,14 @@ export async function getFleet(params = {}) {
 }
 
 /**
+ * Fetch engine/emission profile (combustion efficiency, CO2 factor, fuel
+ * multiplier) for each supported vehicle type.
+ */
+export async function getVehicleTypes() {
+  return request('/api/fleet/vehicle-types')
+}
+
+/**
  * Register a new vehicle. Persisted server-side (SQLite) and immediately
  * visible to subsequent optimize runs.
  */
@@ -265,6 +273,7 @@ export default {
   simulateWhatIf,
   getScenarioMatrix,
   getFleet,
+  getVehicleTypes,
   registerVehicle,
   logTelemetry,
   getTelemetryScore,

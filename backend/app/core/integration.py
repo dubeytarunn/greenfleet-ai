@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from . import behavior_registry
 from .config import settings
 from .optimizer import optimize_routes
+from .vehicle_profiles import get_vehicle_profile
 from .quantum_optimizer import (
     OptimizationConfig as CoreOptConfig,
     Prediction as CorePrediction,
@@ -40,6 +41,14 @@ except Exception as e:
     logger.warning(f"ml_engine import failed: {e}. Using physics-grounded fallback.")
     ML_AVAILABLE = False
 
+# vehicle_type categories the trained LightGBM model actually saw during
+# training (see ml_engine/generate_data.py). Any other type string (e.g. the
+# newer "Standard"/"Commercial Truck"/"Hazmat truck" categories) is unseen by
+# the model's categorical encoder and would silently collapse to an arbitrary
+# default — so those always go through the physics fallback instead, which
+# looks the type up in `vehicle_profiles` and differentiates it correctly.
+_ML_KNOWN_VEHICLE_TYPES = {"Van", "Light Commercial", "Truck", "Semi-Trailer", "Bus"}
+
 
 def _physics_fallback_prediction(
     vehicle: VehicleModel,
@@ -50,14 +59,9 @@ def _physics_fallback_prediction(
     High-fidelity physics-based fuel estimation fallback in case ML model is unavailable.
     Fuel (L) = (Base_Rate * Distance / 100) * Load_Factor * Traffic_Factor * Age_Factor
     """
-    base_l_per_100km = {
-        "Van": 10.5,
-        "Light Commercial": 16.0,
-        "Truck": 26.0,
-        "Semi-Trailer": 36.0,
-        "Bus": 28.0,
-    }.get(vehicle.vehicle_type, 22.0)
-    
+    profile = get_vehicle_profile(vehicle.vehicle_type)
+    base_l_per_100km = profile["base_l_per_100km"]
+
     # Powertrain adjustment
     if vehicle.fuel_type == "Hybrid":
         base_l_per_100km *= 0.75
@@ -121,7 +125,7 @@ def predict_fuel_and_co2(
         for r in routes:
             trip_data: Optional[Dict[str, Any]] = None
 
-            if ML_AVAILABLE:
+            if ML_AVAILABLE and v.vehicle_type in _ML_KNOWN_VEHICLE_TYPES:
                 try:
                     v_dict = v.model_dump()
                     r_dict = r.model_dump()
@@ -134,7 +138,8 @@ def predict_fuel_and_co2(
                 factor = settings.EMISSION_FACTORS_KG_CO2_PER_LITRE.get(
                     v.fuel_type, settings.EMISSION_FACTORS_KG_CO2_PER_LITRE["Default"]
                 )
-                co2_val = round(phys["predicted_fuel_l"] * factor, 1)
+                type_co2_factor = get_vehicle_profile(v.vehicle_type)["co2_emission_factor"]
+                co2_val = round(phys["predicted_fuel_l"] * factor * type_co2_factor, 1)
                 trip_data = {
                     "vehicle_id": v.vehicle_id,
                     "route_id": r.route_id,

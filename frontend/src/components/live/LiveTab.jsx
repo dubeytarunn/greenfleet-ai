@@ -25,6 +25,18 @@ function routeCoord(routeId) {
   return [DEPOT[0] + Math.sin(angle) * distance, DEPOT[1] + Math.cos(angle) * distance]
 }
 
+// Distinct, colorblind-reasonable palette — one color per vehicle, assigned
+// deterministically (by ID hash) so a given vehicle always gets the same
+// color across re-renders/re-optimizes instead of shifting with array order.
+const DRIVER_PALETTE = [
+  '#1E8E3E', '#0078D3', '#E58A00', '#8E24AA', '#D93025',
+  '#00838F', '#C2185B', '#5B8DEF', '#6D4C41', '#00A896',
+]
+
+function driverColor(vehicleId) {
+  return DRIVER_PALETTE[hashCode(vehicleId) % DRIVER_PALETTE.length]
+}
+
 function vehicleIcon(color) {
   return L.divIcon({
     className: 'map-vehicle-icon',
@@ -32,6 +44,48 @@ function vehicleIcon(color) {
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   })
+}
+
+// Bends a straight depot->destination line into a gently curved arc (quadratic
+// bezier, sampled into a polyline) so it reads as a "route" rather than a
+// ruler-straight line — same curve is used in both the all-routes view and
+// the single-driver-focused view, just re-styled (thicker/highlighted).
+function curvedRoutePath(from, to, bendSign = 1) {
+  const midLat = (from[0] + to[0]) / 2
+  const midLng = (from[1] + to[1]) / 2
+  const dLat = to[0] - from[0]
+  const dLng = to[1] - from[1]
+  // perpendicular offset, scaled to ~15% of the segment length
+  const perpLat = -dLng * 0.15 * bendSign
+  const perpLng = dLat * 0.15 * bendSign
+  const controlPoint = [midLat + perpLat, midLng + perpLng]
+
+  const points = []
+  const steps = 24
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const lat = (1 - t) * (1 - t) * from[0] + 2 * (1 - t) * t * controlPoint[0] + t * t * to[0]
+    const lng = (1 - t) * (1 - t) * from[1] + 2 * (1 - t) * t * controlPoint[1] + t * t * to[1]
+    points.push([lat, lng])
+  }
+  return points
+}
+
+// Public OSRM demo routing server — no API key required. Returns the actual
+// road-following geometry (turns included) between two points, snapped to
+// the nearest routable road. Used instead of the synthetic bezier curve
+// whenever a real path can be fetched; the curve remains a fallback for
+// while a fetch is in flight or if OSRM is unreachable/rate-limited.
+const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving'
+
+async function fetchRoadPath(from, to) {
+  const url = `${OSRM_BASE}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`OSRM request failed: ${res.status}`)
+  const data = await res.json()
+  const coords = data?.routes?.[0]?.geometry?.coordinates
+  if (!coords || !coords.length) throw new Error('OSRM returned no route geometry')
+  return coords.map(([lng, lat]) => [lat, lng]) // GeoJSON is [lng, lat]; Leaflet wants [lat, lng]
 }
 
 // Re-centers/zooms the map when the selected driver (and therefore the set
@@ -61,6 +115,7 @@ export default function LiveTab({
   const [driverPortals, setDriverPortals] = useState({})
   const [harshEventDrivers, setHarshEventDrivers] = useState(new Set())
   const [selectedDriverId, setSelectedDriverId] = useState(null)
+  const [roadPaths, setRoadPaths] = useState({}) // routeId -> [[lat,lng], ...] real road geometry
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -68,6 +123,26 @@ export default function LiveTab({
     }, 2500)
     return () => clearInterval(timer)
   }, [])
+
+  // Fetch real road-following geometry (with turns) for each route from a
+  // public OSRM instance, keyed by route ID so it's only fetched once per
+  // route and reused across re-renders/re-optimizes/driver-selection.
+  useEffect(() => {
+    let cancelled = false
+    routes.forEach((r) => {
+      if (roadPaths[r.id]) return // already fetched (or in progress this effect run)
+      const dest = routeCoord(r.id)
+      fetchRoadPath(DEPOT, dest)
+        .then((path) => {
+          if (!cancelled) setRoadPaths((prev) => (prev[r.id] ? prev : { ...prev, [r.id]: path }))
+        })
+        .catch(() => {
+          // Leave unset — callers fall back to the synthetic curve.
+        })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes])
 
   const computeDriverBehaviour = (driverId, tick) => {
     let brakeFreq = 4.2 + (Math.sin(driverId.charCodeAt(2) + tick * 0.4) + 1) * 2.5
@@ -167,27 +242,38 @@ export default function LiveTab({
                   </Popup>
                 </Marker>
 
-                {/* Route destinations + roads (filtered to the selected driver's route, if any) */}
+                {/* Route destinations + roads — shown as curved paths (not a
+                    straight depot-to-destination line) in both the all-routes
+                    view and the single-driver-focused view; colored by the
+                    assigned vehicle so each driver reads as a distinct color. */}
                 {visibleRoutes.map((r) => {
-                  const coord = routeCoord(r.id)
-                  const isCovered = vehicles.some((v) => (assignment[v.id] || []).includes(r.id))
+                  const bendSign = hashCode(r.id) % 2 === 0 ? 1 : -1
+                  const fallbackDest = routeCoord(r.id)
+                  // Real road-following path if OSRM returned one; otherwise the
+                  // synthetic curve while it's still loading / unavailable.
+                  const path = roadPaths[r.id] || curvedRoutePath(DEPOT, fallbackDest, bendSign)
+                  const coord = path[path.length - 1] // marker sits at the path's actual endpoint
+                  const assignedVehicle = vehicles.find((v) => (assignment[v.id] || []).includes(r.id))
+                  const isCovered = Boolean(assignedVehicle)
                   const isFocused = selectedVehicle && selectedAssignedRoutes.includes(r.id)
+                  const routeColor = assignedVehicle ? driverColor(assignedVehicle.id) : '#8A96A6'
                   return (
                     <React.Fragment key={`dest-${r.id}`}>
                       <Polyline
-                        positions={[DEPOT, coord]}
+                        positions={path}
                         pathOptions={{
-                          color: isFocused ? '#1E8E3E' : '#5B6B7F',
-                          weight: isFocused ? 4 : 2,
-                          opacity: isFocused ? 0.9 : 0.45,
+                          color: routeColor,
+                          weight: isFocused ? 5 : 3,
+                          opacity: isFocused ? 0.95 : (isCovered ? 0.65 : 0.35),
+                          dashArray: isCovered ? null : '6 6',
                         }}
                       />
                       <CircleMarker
                         center={coord}
                         radius={isFocused ? 9 : 7}
                         pathOptions={{
-                          color: isCovered ? '#1E8E3E' : '#D93025',
-                          fillColor: isCovered ? '#1E8E3E' : '#D93025',
+                          color: routeColor,
+                          fillColor: routeColor,
                           fillOpacity: 0.9,
                         }}
                       >
@@ -204,19 +290,23 @@ export default function LiveTab({
                   )
                 })}
 
-                {/* Animated live vehicles (filtered to the selected driver, if any) */}
+                {/* Animated live vehicles (filtered to the selected driver, if any) —
+                    each vehicle gets its own color and moves along the same
+                    real road path drawn for its route (falls back to the
+                    synthetic curve while that path is still loading). */}
                 {visibleVehicles.map((v, i) => {
                   const assigned = (assignment[v.id] || [])[0]
                   if (!assigned) return null
-                  const coord = routeCoord(assigned)
+                  const bendSign = hashCode(assigned) % 2 === 0 ? 1 : -1
+                  const path = roadPaths[assigned] || curvedRoutePath(DEPOT, routeCoord(assigned), bendSign)
                   const t = (Math.sin((liveTick / 6) + i * 1.5) + 1) / 2
-                  const lat = DEPOT[0] + (coord[0] - DEPOT[0]) * t
-                  const lng = DEPOT[1] + (coord[1] - DEPOT[1]) * t
+                  const [lat, lng] = path[Math.min(path.length - 1, Math.round(t * (path.length - 1)))]
                   const speed = Math.round(35 + (Math.sin(liveTick + v.id.charCodeAt(2)) + 1) * 15)
                   const route = routes.find((r) => r.id === assigned)
+                  const color = driverColor(v.id)
 
                   return (
-                    <Marker key={`live-veh-${v.id}`} position={[lat, lng]} icon={vehicleIcon('#1E8E3E')}>
+                    <Marker key={`live-veh-${v.id}`} position={[lat, lng]} icon={vehicleIcon(color)}>
                       <Popup>
                         <div className="map-popup">
                           <strong>{v.id} · Ignition on · {speed} km/h</strong>

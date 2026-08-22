@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from backend.app.models.schemas import Vehicle, Route
 from backend.app.models.vehicle import VehicleModel
 from backend.app.core import vehicle_registry
+from backend.app.core.vehicle_profiles import VEHICLE_TYPE_PROFILES
 
 router = APIRouter(prefix="/fleet", tags=["Fleet & Routes"])
 
@@ -43,6 +44,13 @@ def _model_to_schema(v: VehicleModel) -> Vehicle:
         max_payload_kg=v.max_payload_kg,
         available=v.available,
     )
+
+
+@router.get("/vehicle-types")
+def get_vehicle_types():
+    """Engine/emission profile per supported vehicle type — powers the
+    vehicle-type picker's live preview in the frontend registration form."""
+    return VEHICLE_TYPE_PROFILES
 
 
 @router.get("", response_model=List[Vehicle])
