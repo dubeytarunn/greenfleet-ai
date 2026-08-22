@@ -1,6 +1,6 @@
 {
     "best_model": "lightgbm",
-    "is_lightgbm_native": false,
+    "is_lightgbm_native": true,
     "random_seed": 42,
     "features": {
         "categorical": [
@@ -38,22 +38,22 @@
     "metrics_summary": {
         "lightgbm": {
             "train": {
-                "mae": 0.9845,
-                "rmse": 1.3916,
+                "mae": 0.9978,
+                "rmse": 1.4041,
                 "r2": 0.9988,
-                "mape_percent": 2.6
+                "mape_percent": 2.68
             },
             "val": {
-                "mae": 1.9144,
-                "rmse": 3.2132,
-                "r2": 0.9941,
-                "mape_percent": 4.12
+                "mae": 1.9678,
+                "rmse": 3.3149,
+                "r2": 0.9937,
+                "mape_percent": 4.2
             },
             "test": {
-                "mae": 1.9859,
-                "rmse": 3.1859,
-                "r2": 0.9939,
-                "mape_percent": 4.17
+                "mae": 1.9537,
+                "rmse": 3.1505,
+                "r2": 0.994,
+                "mape_percent": 4.16
             }
         },
         "linear_regression": {
@@ -78,21 +78,21 @@
         },
         "random_forest": {
             "train": {
-                "mae": 1.032,
-                "rmse": 1.679,
+                "mae": 1.0313,
+                "rmse": 1.678,
                 "r2": 0.9982,
                 "mape_percent": 2.19
             },
             "val": {
-                "mae": 2.7768,
-                "rmse": 4.6869,
-                "r2": 0.9874,
+                "mae": 2.7776,
+                "rmse": 4.6822,
+                "r2": 0.9875,
                 "mape_percent": 6.04
             },
             "test": {
-                "mae": 2.7133,
-                "rmse": 4.3855,
-                "r2": 0.9885,
+                "mae": 2.7118,
+                "rmse": 4.3897,
+                "r2": 0.9884,
                 "mape_percent": 5.51
             }
         }

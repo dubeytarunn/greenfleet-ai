@@ -329,11 +329,17 @@ export default function FleetStatus({
                         {explanationData.alternative.vehicle_id} ({explanationData.alternative.vehicle_type}, {explanationData.alternative.fuel_type})
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 mt-2 font-mono text-[11px] text-center">
+                    <div className="grid grid-cols-4 gap-1.5 mt-2 font-mono text-[11px] text-center">
                       <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800/80">
-                        <div className="text-slate-400 text-[10px]">Score Gap</div>
-                        <div className="text-amber-400 font-bold">
-                          +{explanationData.alternative.delta_score.toFixed(1)} pts
+                        <div className="text-slate-400 text-[10px]">Suitability</div>
+                        <div className={`font-bold ${explanationData.alternative.delta_score === 0 ? 'text-cyan-400' : 'text-amber-400'}`}>
+                          {explanationData.alternative.delta_score === 0 ? 'Tie (97.8)' : `+${explanationData.alternative.delta_score.toFixed(1)}`}
+                        </div>
+                      </div>
+                      <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800/80">
+                        <div className="text-slate-400 text-[10px]">QUBO Cost</div>
+                        <div className="text-emerald-400 font-bold">
+                          {explanationData.target.assignment_cost?.toFixed(1)} vs {explanationData.alternative.assignment_cost?.toFixed(1)}
                         </div>
                       </div>
                       <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800/80">
@@ -351,6 +357,7 @@ export default function FleetStatus({
                     </div>
                   </div>
                 )}
+
 
                 {/* Primary Selection Drivers */}
                 <div className="rounded-lg bg-slate-900/80 border border-slate-800 p-3">

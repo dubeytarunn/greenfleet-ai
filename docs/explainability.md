@@ -37,9 +37,10 @@ For an assigned pair $(V_{\text{target}}, R_{\text{target}})$:
 2. **Hard Feasibility Constraints:**
    - $V_k.\text{available} == \text{True}$
    - $V_k.\text{max\_payload\_kg} \ge R_{\text{target}}.\text{required\_payload\_kg}$
-3. All feasible alternatives are scored via $S(V_k, R_{\text{target}})$ and evaluated under the QUBO cost function:
+3. All feasible alternatives are evaluated by the 5-factor suitability scoring model $S(V_k, R_{\text{target}})$, and their corresponding QUBO assignment cost $C(V_k, R_{\text{target}})$ is calculated as a secondary comparison metric:
    $$C(V_k, R_{\text{target}}) = \left( w_{\text{fuel}} \cdot F^{\text{risk}}_{kj} + w_{\text{co2}}(B) \cdot E_{kj} + w_{\text{dist}} \cdot D_j \tau_j + 0.05(C_k - L_j) \right) \cdot \text{priority}_j$$
-4. The candidate with the highest suitability score and lowest assignment cost is designated the **Strongest Feasible Alternative** ($V_{\text{alt}}$).
+   Where $E_{kj} = \hat{F}_{kj} \cdot \text{Factor}_{\text{fuel}}$ is expected physical emissions.
+4. **Strongest Feasible Alternative Definition:** The candidate vehicle with the **highest 5-factor suitability score $S(V_k, R_{\text{target}})$** among all feasible vehicles ($V_k \neq V_{\text{target}}$), with QUBO assignment cost reported as a secondary comparison.
 5. If no other vehicle in the fleet has sufficient capacity, the engine flags a **Structural Capacity Constraint** (*"Sole feasible vehicle in the fleet"*).
 
 ---
@@ -82,8 +83,9 @@ $$\lambda^* = \frac{\hat{F}_{\text{alt}} - \hat{F}_{\text{target}}}{U_{\text{tar
 
 ## 6. API Specifications
 
-### Endpoint:
-`GET /api/simulate/explanation/{vehicle_id}` or `GET /api/assignments/{vehicle_id}/explanation`
+### Canonical Endpoint:
+`GET /api/assignments/{vehicle_id}/explanation`
+
 
 ### Response Payload:
 ```json

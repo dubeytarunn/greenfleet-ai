@@ -1,5 +1,5 @@
 import React from 'react'
-import { Truck, Fuel, CloudFog, ShieldAlert, TrendingDown, Leaf } from 'lucide-react'
+import { Truck, Fuel, CloudFog, TrendingDown, Leaf, IndianRupee } from 'lucide-react'
 import MetricCard from '../common/MetricCard.jsx'
 
 export default function KPIGrid({
@@ -7,9 +7,9 @@ export default function KPIGrid({
   simulationState = null,
   carbonBudget = null,
   isOptimized = false,
+  economics = null,
 }) {
   const totalVehicles = simulationState?.vehicles?.length || 0
-  const totalRoutes = simulationState?.routes?.length || 0
   const activeAssignments = isOptimized
     ? simulationState?.greenflow_assignments || []
     : simulationState?.baseline_assignments || []
@@ -20,21 +20,17 @@ export default function KPIGrid({
   const greenflowData = benchmark?.greenflow
   const cb = carbonBudget || simulationState?.carbon_budget
 
+  // Direct fuel cost calculation
+  const directCostSaved = economics?.direct_fuel_cost_saved || benchmark?.cost_saved || 0.0
+  const baselineCost = economics?.baseline_fuel_cost || baselineData?.total_operating_cost || 0.0
+  const optCost = economics?.greenflow_fuel_cost || greenflowData?.total_operating_cost || 0.0
+
   const kpiData = [
     {
-      id: 'active-vehicles',
-      label: 'Active Vehicles',
-      value: assignedCount.toString(),
-      unit: `/ ${totalVehicles}`,
-      icon: Truck,
-      subtitle: `${standbyCount} standby in depot`,
-      accent: 'emerald',
-    },
-    {
-      id: 'fuel-consumption',
-      label: 'Fuel Consumption',
-      value: isOptimized && greenflowData
-        ? greenflowData.total_fuel_l.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      id: 'fuel-saved',
+      label: isOptimized ? 'Fuel Saved' : 'Fuel Consumption',
+      value: isOptimized && benchmark
+        ? `${benchmark.fuel_saved_l.toFixed(1)}`
         : (baselineData?.total_fuel_l?.toFixed(1) || '--'),
       unit: 'L',
       icon: Fuel,
@@ -46,53 +42,62 @@ export default function KPIGrid({
       accent: 'cyan',
     },
     {
-      id: 'estimated-co2',
-      label: 'Estimated CO₂',
-      value: isOptimized && greenflowData
-        ? (greenflowData.estimated_co2_kg / 1000).toFixed(2)
+      id: 'co2-reduced',
+      label: isOptimized ? 'CO₂ Reduced' : 'Estimated CO₂',
+      value: isOptimized && benchmark
+        ? `${benchmark.co2_reduced_kg.toFixed(1)}`
         : baselineData
-        ? (baselineData.estimated_co2_kg / 1000).toFixed(2)
+        ? `${baselineData.estimated_co2_kg.toFixed(1)}`
         : '--',
-      unit: 't',
+      unit: 'kg',
       icon: CloudFog,
-      trend: isOptimized && benchmark ? `-${(benchmark.co2_reduced_kg / 1000).toFixed(2)} t` : null,
+      trend: isOptimized && benchmark ? `-${benchmark.co2_reduced_pct.toFixed(1)}%` : null,
       trendPositive: true,
-      subtitle: isOptimized && benchmark
-        ? `Reduced by ${benchmark.co2_reduced_pct.toFixed(1)}%`
-        : 'Direct fleet emissions',
+      subtitle: isOptimized && baselineData
+        ? `Baseline: ${baselineData.estimated_co2_kg.toFixed(1)} kg`
+        : 'Direct emissions',
       accent: 'emerald',
     },
     {
-      id: 'carbon-budget',
-      label: 'Carbon Budget',
-      value: cb
-        ? `${cb.remaining_budget_kg.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+      id: 'cost-saved',
+      label: isOptimized ? 'Cost Saved' : 'Direct Fuel Cost',
+      value: isOptimized && directCostSaved > 0
+        ? `₹${directCostSaved.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+        : baselineCost > 0
+        ? `₹${baselineCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
         : '--',
-      unit: 'kg rem',
+      unit: isOptimized ? '/ shift' : '',
+      icon: IndianRupee,
+      trend: isOptimized && benchmark ? `-${benchmark.cost_saved_pct.toFixed(1)}%` : null,
+      trendPositive: true,
+      subtitle: isOptimized && baselineCost > 0
+        ? `Baseline: ₹${baselineCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+        : 'Direct fuel spend',
+      accent: 'amber',
+    },
+    {
+      id: 'carbon-quota',
+      label: 'Carbon Quota',
+      value: cb
+        ? `${cb.budget_utilisation_pct.toFixed(1)}%`
+        : '--',
+      unit: cb ? `(${cb.status})` : '',
       icon: Leaf,
       trend: cb ? `w_co2=${cb.dynamic_co2_penalty}x` : null,
       trendPositive: cb ? cb.status === 'HEALTHY' || cb.status === 'WARNING' : true,
       subtitle: cb
-        ? `${cb.status} (${cb.budget_utilisation_pct.toFixed(0)}% of ${(cb.budget_kg/1000).toFixed(1)}t)`
-        : 'Budget tracking inactive',
+        ? `${cb.projected_total_kg.toFixed(0)} / ${cb.budget_kg.toFixed(0)} kg quota`
+        : 'Quota tracking inactive',
       accent: cb?.status === 'OVER_BUDGET' ? 'rose' : cb?.status === 'CRITICAL' ? 'amber' : 'emerald',
     },
     {
-      id: 'fuel-saved',
-      label: isOptimized ? 'Total Fuel Saved' : 'Total Operating Cost',
-      value: isOptimized && benchmark
-        ? benchmark.fuel_saved_l.toFixed(1)
-        : baselineData
-        ? `$${baselineData.total_operating_cost.toFixed(0)}`
-        : '--',
-      unit: isOptimized ? 'L' : '',
-      icon: TrendingDown,
-      trend: isOptimized && benchmark ? `$${benchmark.cost_saved.toFixed(0)}` : null,
-      trendPositive: true,
-      subtitle: isOptimized && benchmark
-        ? `Cost delta (-${benchmark.cost_saved_pct.toFixed(1)}%)`
-        : 'Estimated uncoordinated cost',
-      accent: 'amber',
+      id: 'active-vehicles',
+      label: 'Fleet Dispatch',
+      value: `${assignedCount}`,
+      unit: `/ ${totalVehicles} active`,
+      icon: Truck,
+      subtitle: `${standbyCount} standby in depot`,
+      accent: 'emerald',
     },
   ]
 
@@ -114,4 +119,3 @@ export default function KPIGrid({
     </div>
   )
 }
-

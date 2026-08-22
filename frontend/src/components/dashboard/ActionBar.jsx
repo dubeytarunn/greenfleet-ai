@@ -12,6 +12,9 @@ export default function ActionBar({
   onSimulatePeak,
   onSimulateTraffic,
   onOptimize,
+  onOpenWhatIf,
+  onOpenScenarios,
+  onOpenShiftSummary,
 }) {
   const getScenarioLabel = () => {
     switch (scenario) {
@@ -156,7 +159,7 @@ export default function ActionBar({
           type="button"
           onClick={onReset}
           disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           title="Reset fleet and route network to initial normal state"
         >
           {activeAction === 'reset' ? (
@@ -166,7 +169,44 @@ export default function ActionBar({
           )}
           <span>Reset</span>
         </button>
+
+        <span className="text-slate-600 hidden md:inline">|</span>
+
+        {/* Commercial Decision Support Action Triggers */}
+        {onOpenWhatIf && (
+          <button
+            type="button"
+            onClick={onOpenWhatIf}
+            className="flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm active:scale-95"
+            title="Open 4-parameter interactive What-If Simulator"
+          >
+            <span>What-If</span>
+          </button>
+        )}
+
+        {onOpenScenarios && (
+          <button
+            type="button"
+            onClick={onOpenScenarios}
+            className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm active:scale-95"
+            title="View 4-scenario comparative planning matrix"
+          >
+            <span>Scenarios</span>
+          </button>
+        )}
+
+        {onOpenShiftSummary && (
+          <button
+            type="button"
+            onClick={onOpenShiftSummary}
+            className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm active:scale-95"
+            title="View complete shift dispatch & sustainability report"
+          >
+            <span>Shift Summary</span>
+          </button>
+        )}
       </div>
     </div>
   )
 }
+

@@ -1,21 +1,46 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import KPIGrid from './KPIGrid.jsx'
 import ActionBar from './ActionBar.jsx'
+import RecommendationPanel from './RecommendationPanel.jsx'
 import FleetMapPlaceholder from './FleetMapPlaceholder.jsx'
 import FleetStatus from './FleetStatus.jsx'
 import AnalyticsPlaceholder from './AnalyticsPlaceholder.jsx'
 import BeforeAfter from './BeforeAfter.jsx'
+import WhatIfSimulatorModal from './WhatIfSimulatorModal.jsx'
+import ScenarioMatrixModal from './ScenarioMatrixModal.jsx'
+import ShiftSummaryModal from './ShiftSummaryModal.jsx'
 import api from '../../services/api.js'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
 export default function Dashboard() {
   const [simulationState, setSimulationState] = useState(null)
   const [benchmark, setBenchmark] = useState(null)
+  const [recommendation, setRecommendation] = useState(null)
+  const [economics, setEconomics] = useState(null)
   const [scoringMap, setScoringMap] = useState({})
   const [isOptimized, setIsOptimized] = useState(false)
   const [loading, setLoading] = useState(true)
   const [activeAction, setActiveAction] = useState(null)
   const [error, setError] = useState(null)
+
+  // Modals state
+  const [isWhatIfOpen, setIsWhatIfOpen] = useState(false)
+  const [isScenariosOpen, setIsScenariosOpen] = useState(false)
+  const [isShiftSummaryOpen, setIsShiftSummaryOpen] = useState(false)
+
+  // Fetch decision support data (recommendations & economics)
+  const fetchDecisionData = async () => {
+    try {
+      const [rec, econ] = await Promise.allSettled([
+        api.getRecommendation(),
+        api.getEconomics(),
+      ])
+      if (rec.status === 'fulfilled') setRecommendation(rec.value)
+      if (econ.status === 'fulfilled') setEconomics(econ.value)
+    } catch (err) {
+      console.warn('[Dashboard] Decision data fetch warning:', err.message)
+    }
+  }
 
   // Fetch explainable scoring for vehicles & routes
   const fetchScoringData = async (vehicles, routes) => {
@@ -50,7 +75,10 @@ export default function Dashboard() {
         setBenchmark(bmk)
       }
 
-      await fetchScoringData(state.vehicles, state.routes)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
       console.error('[Dashboard] Initial data load failed:', err)
       setError(`Failed to connect to GreenFleet Backend at ${import.meta.env.VITE_API_URL || 'http://localhost:8000'}. Ensure backend server is running. (${err.message})`)
@@ -58,6 +86,7 @@ export default function Dashboard() {
       setLoading(false)
     }
   }, [])
+
 
   useEffect(() => {
     loadInitialData()
@@ -73,7 +102,10 @@ export default function Dashboard() {
       setSimulationState(state)
       setBenchmark(state.benchmark || null)
       setIsOptimized(false)
-      await fetchScoringData(state.vehicles, state.routes)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
       setError(`Reset failed: ${err.message}`)
     } finally {
@@ -92,7 +124,10 @@ export default function Dashboard() {
       setSimulationState(state)
       setBenchmark(state.benchmark || null)
       setIsOptimized(false)
-      await fetchScoringData(state.vehicles, state.routes)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
       setError(`Peak simulation failed: ${err.message}`)
     } finally {
@@ -111,7 +146,10 @@ export default function Dashboard() {
       setSimulationState(state)
       setBenchmark(state.benchmark || null)
       setIsOptimized(false)
-      await fetchScoringData(state.vehicles, state.routes)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
       setError(`Traffic simulation failed: ${err.message}`)
     } finally {
@@ -130,7 +168,10 @@ export default function Dashboard() {
       setSimulationState(state)
       setBenchmark(state.benchmark || null)
       setIsOptimized(true)
-      await fetchScoringData(state.vehicles, state.routes)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
       setError(`Optimization failed: ${err.message}`)
     } finally {
@@ -161,15 +202,16 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 1. Primary Metrics Row */}
+      {/* 1. Commercial Economic Impact KPI Row */}
       <KPIGrid
         benchmark={benchmark}
         simulationState={simulationState}
         carbonBudget={simulationState?.carbon_budget}
         isOptimized={isOptimized}
+        economics={economics}
       />
 
-      {/* 2. Simulation & Optimization Action Bar */}
+      {/* 2. Simulation & Optimization Action Bar with Planning Triggers */}
       <ActionBar
         scenario={simulationState?.scenario || 'normal'}
         status={simulationState?.status || 'normal_state'}
@@ -181,10 +223,19 @@ export default function Dashboard() {
         onSimulatePeak={handleSimulatePeak}
         onSimulateTraffic={handleSimulateTraffic}
         onOptimize={handleOptimize}
+        onOpenWhatIf={() => setIsWhatIfOpen(true)}
+        onOpenScenarios={() => setIsScenariosOpen(true)}
+        onOpenShiftSummary={() => setIsShiftSummaryOpen(true)}
       />
 
+      {/* 3. Dispatcher "What Should I Do?" Actionable Recommendation Panel */}
+      <RecommendationPanel
+        recommendation={recommendation}
+        isOptimized={isOptimized}
+        onOptimize={handleOptimize}
+      />
 
-      {/* 3. Main Network Map & Fleet Status Section */}
+      {/* 4. Main Network Map & Fleet Status Section */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
         {/* Left / Large: Fleet & Route Network */}
         <div className="lg:col-span-8 flex flex-col min-h-[420px]">
@@ -203,7 +254,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 4. Analytics Panels (Fuel Consumption Analysis & Fleet Efficiency) */}
+      {/* 5. Analytics Panels (Fuel Consumption Analysis & Fleet Efficiency) */}
       <AnalyticsPlaceholder
         routes={simulationState?.routes || []}
         baselineAssignments={simulationState?.baseline_assignments || []}
@@ -212,11 +263,31 @@ export default function Dashboard() {
         benchmark={benchmark}
       />
 
-      {/* 5. Comparative Evaluation: Baseline vs GreenFleet */}
+      {/* 6. Comparative Evaluation: Baseline vs GreenFleet */}
       <BeforeAfter
         benchmark={benchmark}
         isOptimized={isOptimized}
       />
+
+      {/* 7. Commercial Decision Support Modals */}
+      <WhatIfSimulatorModal
+        isOpen={isWhatIfOpen}
+        onClose={() => setIsWhatIfOpen(false)}
+      />
+
+      <ScenarioMatrixModal
+        isOpen={isScenariosOpen}
+        onClose={() => setIsScenariosOpen(false)}
+      />
+
+      <ShiftSummaryModal
+        isOpen={isShiftSummaryOpen}
+        onClose={() => setIsShiftSummaryOpen(false)}
+        simulationState={simulationState}
+        benchmark={benchmark}
+        economics={economics}
+      />
     </main>
   )
 }
+

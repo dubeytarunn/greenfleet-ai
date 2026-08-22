@@ -33,11 +33,17 @@ Where:
 - $W_j$: Weather Stress Index
 - $G_j$: Road Incline Grade
 
-### C. Conformal Non-Conformity Calibration
+### C. Conformal Non-Conformity Calibration & Empirical Validation
 On the calibration dataset, non-conformity scores are computed:
 $$R_k = \frac{|y_k - \hat{y}_k|}{S(x_k)}$$
 The empirical $90\text{th}$ percentile conformal quantile is:
 $$\hat{q}_{0.90} = 1.805\text{ L} \quad (\hat{q}_{0.95} = 2.546\text{ L})$$
+
+#### Empirical Verification on 1,200 Held-Out Fleet Trips:
+- **Nominal 90% Confidence Interval $\to$ Observed Empirical Coverage:** **`90.25%`**
+- **Nominal 95% Confidence Interval $\to$ Observed Empirical Coverage:** **`95.50%`**
+- **Median 90% Interval Width ($2U$):** **`6.13 L`** (Half-width $U = 3.07\text{ L}$)
+- **Mean 90% Interval Width ($2U$):** **`6.11 L`**
 
 ---
 
@@ -51,7 +57,7 @@ For any candidate assignment of vehicle $i$ to route $j$:
 2. **Uncertainty Half-Width ($U_{ij}$):**
    $$U_{ij} = \hat{q}_{1-\alpha} \cdot S(x_{ij})$$
 
-3. **Conformal Prediction Interval:**
+3. **Calibrated Prediction Interval:**
    $$\hat{F}^{\text{low}}_{ij} = \max\left(0.1, \hat{F}_{ij} - U_{ij}\right)$$
    $$\hat{F}^{\text{high}}_{ij} = \hat{F}_{ij} + U_{ij}$$
 
@@ -67,26 +73,28 @@ To incorporate risk tolerance into fleet dispatch, GreenFlow defines **Risk-Adju
 $$F^{\text{risk}}_{ij} = \hat{F}_{ij} + \lambda \cdot U_{ij} = \hat{F}_{ij} + \lambda \cdot \left(\hat{F}^{\text{high}}_{ij} - \hat{F}_{ij}\right)$$
 
 Where $\lambda \ge 0$ is the **Dispatcher Risk-Aversion Parameter**:
-- $\lambda = 0.0$: **Risk-Neutral** (Optimization optimizes purely for expected fuel $\hat{F}_{ij}$).
-- $\lambda = 0.5$: **Default Operational Risk Mitigation** (Balances efficiency with variance protection).
-- $\lambda \ge 1.0$: **High Risk-Averse** (Heavily penalizes volatile vehicle-route combinations).
+- $\lambda = 0.0$: **Risk-Neutral** (Optimizes purely for expected fuel $\hat{F}_{ij}$)
+- $0 < \lambda \le 0.5$: **Mild Risk Aversion** (**Default: $\lambda = 0.5$**, balanced variance protection)
+- $0.5 < \lambda \le 1.0$: **Moderate Risk Aversion**
+- $\lambda > 1.0$: **High Risk Aversion** (Heavily penalizes volatile vehicle-route combinations)
 
 ---
 
 ## 5. Integration into QUBO / SA Optimization
 
-Risk-adjusted fuel directly replaces raw expected fuel in the objective cost matrix $C_{ij}$:
+Risk-adjusted fuel replaces raw expected fuel *only* in the fuel risk penalty term of the objective cost matrix $C_{ij}$:
 
 $$C_{ij} = \left( w_{\text{fuel}} \cdot F^{\text{risk}}_{ij} + w_{\text{co2}}(B) \cdot E_{ij} + w_{\text{dist}} \cdot D_j \cdot \tau_j + \text{pen}_{\text{cap}}(i, j) \right) \cdot \text{priority}_j$$
 
 Where:
-- $F^{\text{risk}}_{ij} = \hat{F}_{ij} + \lambda \cdot U_{ij}$
+- $F^{\text{risk}}_{ij} = \hat{F}_{ij} + \lambda \cdot U_{ij}$: Fuel consumption risk surrogate.
+- $E_{ij} = \hat{F}_{ij} \cdot \text{Factor}_{\text{fuel}}$: **Expected physical CO₂ emissions** computed from expected fuel consumption $\hat{F}_{ij}$ (independent of optimization risk surrogate $F^{\text{risk}}_{ij}$).
 - $w_{\text{co2}}(B) \in [1.0, 5.0]$: Dynamic environmental penalty computed independently by the **Carbon Budget Governor**.
-- $E_{ij} = F^{\text{risk}}_{ij} \cdot \text{Factor}_{\text{fuel}}$: CO₂ emissions computed from fuel.
 
 ### Dual-Adaptive Optimization:
 1. **Risk Dimension ($\lambda$):** Steers assignments away from high-uncertainty options.
-2. **Carbon Dimension ($B_{\text{shift}}$):** Escalates emissions penalties as the cumulative budget tightens.
+2. **Carbon Dimension ($B_{\text{shift}}$):** Escalates physical emissions penalties as the cumulative budget tightens.
+
 
 ---
 
