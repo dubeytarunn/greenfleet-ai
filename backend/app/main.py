@@ -81,6 +81,14 @@ def get_carbon_budget_direct():
     return simulation_engine.carbon_governor.get_state()
 
 
+@app.get("/api/assignments/{vehicle_id}/explanation", summary="Get deterministic assignment explanation")
+@app.get("/api/explain/{vehicle_id}", summary="Get deterministic assignment explanation")
+def get_assignment_explanation_direct(vehicle_id: str):
+    from simulation.engine import simulation_engine
+    return simulation_engine.get_assignment_explanation(vehicle_id)
+
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

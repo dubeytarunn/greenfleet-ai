@@ -165,6 +165,13 @@ export async function optimize(payload) {
   })
 }
 
+/**
+ * Fetch deterministic 5-factor explanation, best alternative, and counterfactual sensitivity for an assignment.
+ */
+export async function getAssignmentExplanation(vehicleId) {
+  return request(`/api/simulate/explanation/${vehicleId}`)
+}
+
 export default {
   getSimulationState,
   resetSimulation,
@@ -174,10 +181,12 @@ export default {
   getBenchmark,
   getCarbonBudget,
   setCarbonBudget,
+  getAssignmentExplanation,
   getFleet,
   getRoutes,
   getScoring,
   getPrediction,
   optimize,
 }
+
 

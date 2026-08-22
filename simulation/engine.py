@@ -15,12 +15,14 @@ from backend.app.core.carbon_governor import (
     DEFAULT_SHIFT_BUDGET_KG,
 )
 from backend.app.core.config import settings
+from backend.app.core.explainability import explain_assignment
 from backend.app.core.integration import predict_fuel_and_co2, run_greenflow_optimizer
 from backend.app.models.assignment import (
     AssignmentModel,
     OptimizationConfigModel,
     PredictionModel,
 )
+from backend.app.models.explainability import AssignmentExplanationResponse
 from backend.app.models.route import RouteModel
 from backend.app.models.simulation import (
     BenchmarkComparison,
@@ -32,6 +34,7 @@ from backend.app.models.simulation import (
 from backend.app.models.vehicle import VehicleModel
 from .baseline import solve_baseline_heuristic
 from .scenarios import generate_scenario
+
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +279,41 @@ class SimulationEngine:
         """Returns the current state response."""
         with self._lock:
             return self._build_state_response()
+
+    def get_assignment_explanation(self, vehicle_id: str) -> AssignmentExplanationResponse:
+        """
+        Generates an auditable, deterministic 5-factor explanation and counterfactual
+        sensitivity analysis for a specific vehicle's active assignment.
+        """
+        with self._lock:
+            active_assignments = self.greenflow_assignments if self.greenflow_assignments else self.baseline_assignments
+            assignment = next((a for a in active_assignments if a.vehicle_id == vehicle_id and a.status == "assigned"), None)
+            
+            if not assignment:
+                assignment = next((a for a in self.baseline_assignments if a.vehicle_id == vehicle_id and a.status == "assigned"), None)
+                
+            if not assignment:
+                raise ValueError(f"Vehicle '{vehicle_id}' has no active route assignment in the current simulation state.")
+                
+            target_veh = next((v for v in self.vehicles if v.vehicle_id == vehicle_id), None)
+            target_rt = next((r for r in self.routes if r.route_id == assignment.route_id), None)
+            
+            if not target_veh or not target_rt:
+                raise ValueError(f"Vehicle '{vehicle_id}' or Route '{assignment.route_id}' not found in simulation state.")
+                
+            gov_state = self.carbon_governor.get_state()
+            carbon_model = CarbonBudgetModel(**gov_state.model_dump())
+            
+            return explain_assignment(
+                target_vehicle=target_veh,
+                target_route=target_rt,
+                fleet=self.vehicles,
+                routes=self.routes,
+                predictions=self.predictions,
+                carbon_budget=carbon_model,
+                risk_aversion_lambda=0.5,
+            )
+
 
     def _calculate_kpis(self, assignments: List[AssignmentModel], strategy_name: str) -> BenchmarkKPIs:
         """Calculates dynamic operational metrics for a set of assignments."""
