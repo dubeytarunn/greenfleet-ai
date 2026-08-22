@@ -133,6 +133,7 @@ class OptimizeResponse(BaseModel):
     total_fuel_l: float
     total_co2_kg: float
     solver_status: str
+    solver_used: Optional[str] = Field(default=None, description="Which solver was ultimately used")
 
 
 class SimulationRunRequest(BaseModel):

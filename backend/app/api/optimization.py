@@ -6,7 +6,7 @@ Integrates Person 3's Quantum-Inspired Optimizer.
 """
 
 from typing import List
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from backend.app.models.schemas import (
     OptimizeRequest,
     OptimizeResponse,
@@ -33,6 +33,11 @@ def compute_assignments(request: OptimizeRequest):
     Compute optimal vehicle-to-route assignments minimizing emissions and fuel.
     Calls Person 3's Quantum-Inspired / MILP optimizer engine.
     """
+    if not request.vehicles:
+        raise HTTPException(status_code=400, detail="Vehicle list cannot be empty")
+    if not request.routes:
+        raise HTTPException(status_code=400, detail="Route list cannot be empty")
+
     # 1. Generate predictions if not supplied
     predictions: List[Prediction] = request.predictions or []
     if not predictions:
@@ -124,10 +129,15 @@ def compute_assignments(request: OptimizeRequest):
     pred_lookup = {(p.vehicle_id, p.route_id): p.estimated_co2_kg for p in predictions}
     total_co2 = sum(pred_lookup.get((a.vehicle_id, a.route_id), a.predicted_fuel_l * 2.5) for a in assignments)
 
+    solver_label = "hungarian" if not unassigned_routes else "partial"
+    if assignments:
+        solver_label = raw_assignments[0].get("solver", "quantum_inspired") if raw_assignments else "hungarian"
+
     return OptimizeResponse(
         assignments=assignments,
         unassigned_routes=unassigned_routes,
         total_fuel_l=round(total_fuel, 2),
         total_co2_kg=round(total_co2, 2),
         solver_status="OPTIMAL" if not unassigned_routes else "FEASIBLE_PARTIAL",
+        solver_used=solver_label,
     )
