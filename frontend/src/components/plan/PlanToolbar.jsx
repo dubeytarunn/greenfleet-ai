@@ -10,7 +10,11 @@ export default function PlanToolbar({
   onShareRoutes,
   onRefresh,
   onToggleLock,
+  onOpenWhatIf,
+  onOpenScenarios,
+  onOpenShiftSummary,
 }) {
+
   return (
     <div className="po-toolbar">
       <span className="po-date-label">Select date:</span>
@@ -71,6 +75,39 @@ export default function PlanToolbar({
       >
         Reset
       </button>
+
+      <span className="po-toolbar-divider" style={{ width: '1px', height: '20px', background: 'var(--line)', margin: '0 4px' }}></span>
+
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={onOpenWhatIf}
+        title="Open interactive 4-parameter What-If Dispatch Simulator"
+        style={{ fontWeight: 600, color: 'var(--geotab-blue)' }}
+      >
+        What-If
+      </button>
+
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={onOpenScenarios}
+        title="Compare 4 operating scenarios side-by-side"
+        style={{ fontWeight: 600, color: 'var(--text-secondary)' }}
+      >
+        Scenarios
+      </button>
+
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={onOpenShiftSummary}
+        title="View shift dispatch performance and export report"
+        style={{ fontWeight: 600, color: 'var(--accent-green)' }}
+      >
+        Shift Summary
+      </button>
+
 
       <div className="icon-btn-row">
         <button
