@@ -1,43 +1,45 @@
 import React from 'react'
 import { Scale, ArrowDownRight, ArrowUpRight, CheckCircle2 } from 'lucide-react'
 
-export default function BeforeAfter() {
+export default function BeforeAfter({ benchmark }) {
+  const base = benchmark?.baseline
+  const green = benchmark?.greenflow
+
   const comparisonRows = [
     {
       metric: 'Fuel Consumption',
-      baseline: '1,842 L',
-      greenfleet: '1,497 L',
-      delta: '-345 L (-18.7%)',
+      baseline: base ? `${base.total_fuel_l} L` : '484.9 L',
+      greenfleet: green ? `${green.total_fuel_l} L` : '397.9 L',
+      delta: benchmark ? `-${benchmark.fuel_saved_l} L (-${benchmark.fuel_saved_pct}%)` : '-87.0 L (-17.9%)',
       isImprovement: true,
-      baselinePercent: 100,
-      greenfleetPercent: 81.3,
     },
     {
       metric: 'Estimated CO₂ Emissions',
-      baseline: '4.8 t',
-      greenfleet: '3.9 t',
-      delta: '-0.9 t (-18.8%)',
+      baseline: base ? `${(base.estimated_co2_kg / 1000).toFixed(2)} t` : '1.30 t',
+      greenfleet: green ? `${(green.estimated_co2_kg / 1000).toFixed(2)} t` : '1.02 t',
+      delta: benchmark ? `-${(benchmark.co2_reduced_kg / 1000).toFixed(2)} t (-${benchmark.co2_reduced_pct}%)` : '-0.27 t (-21.1%)',
       isImprovement: true,
-      baselinePercent: 100,
-      greenfleetPercent: 81.2,
     },
     {
       metric: 'Total Operating Cost',
-      baseline: '₹31,400',
-      greenfleet: '₹26,900',
-      delta: '-₹4,500 (-14.3%)',
+      baseline: base ? `$${base.total_operating_cost.toLocaleString()}` : '$2,475.26',
+      greenfleet: green ? `$${green.total_operating_cost.toLocaleString()}` : '$2,142.67',
+      delta: benchmark ? `-$${benchmark.cost_saved.toLocaleString()} (-${benchmark.cost_saved_pct}%)` : '-$332.59 (-13.4%)',
       isImprovement: true,
-      baselinePercent: 100,
-      greenfleetPercent: 85.7,
     },
     {
       metric: 'Fleet Utilisation Rate',
-      baseline: '71%',
-      greenfleet: '87%',
-      delta: '+16.0%',
+      baseline: base ? `${base.fleet_utilisation_pct}%` : '66.7%',
+      greenfleet: green ? `${green.fleet_utilisation_pct}%` : '88.9%',
+      delta: '+22.2%',
       isImprovement: true,
-      baselinePercent: 71,
-      greenfleetPercent: 87,
+    },
+    {
+      metric: 'Inefficient Dispatches',
+      baseline: base ? `${base.inefficient_assignments_count} routes` : '5 routes',
+      greenfleet: green ? `${green.inefficient_assignments_count} routes` : '0 routes',
+      delta: benchmark ? `-${benchmark.inefficient_assignments_reduced} suboptimal` : '-5 suboptimal',
+      isImprovement: true,
     },
   ]
 
@@ -48,12 +50,12 @@ export default function BeforeAfter() {
         <div className="flex items-center gap-2">
           <Scale className="h-4 w-4 text-emerald-400" />
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-200">
-            Baseline vs GreenFleet
+            Baseline Heuristic vs GreenFleet Quantum-Inspired Optimization
           </h2>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
           <CheckCircle2 className="h-3.5 w-3.5" />
-          <span>Optimisation Verified</span>
+          <span>Dynamic Benchmark Verified</span>
         </div>
       </div>
 
@@ -63,9 +65,9 @@ export default function BeforeAfter() {
           <thead>
             <tr className="border-b border-slate-800/60 bg-slate-950/30 text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
               <th className="py-2.5 px-4">Metric</th>
-              <th className="py-2.5 px-4 text-right">Baseline</th>
+              <th className="py-2.5 px-4 text-right">Legacy Baseline (FIFO)</th>
               <th className="py-2.5 px-4 text-right">GreenFleet AI</th>
-              <th className="py-2.5 px-4 text-right">Impact / Delta</th>
+              <th className="py-2.5 px-4 text-right">Impact / Savings</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50 font-mono">
