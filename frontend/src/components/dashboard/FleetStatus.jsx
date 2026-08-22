@@ -161,6 +161,37 @@ export default function FleetStatus({
                   <span>Payload: <span className="text-slate-400">{payloadRatio}% load</span></span>
                 </div>
 
+                {/* Risk-Aware Conformal Prediction Interval */}
+                {isAssigned && assignment?.uncertainty_l != null && (
+                  <div className="mt-2.5 rounded-md bg-slate-900/90 border border-cyan-500/20 p-2 text-[10px] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-300 flex items-center gap-1">
+                        <Info className="h-3 w-3 text-cyan-400" />
+                        Conformal Prediction (90% Interval)
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        (assignment.uncertainty_pct || 0) > 25
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : (assignment.uncertainty_pct || 0) > 15
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}>
+                        {(assignment.uncertainty_pct || 0) > 25
+                          ? 'HIGH RISK'
+                          : (assignment.uncertainty_pct || 0) > 15
+                          ? 'MODERATE RISK'
+                          : 'LOW RISK'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono text-slate-300 pt-0.5">
+                      <div>Expected: <span className="text-white font-bold">{assignment.predicted_fuel_l?.toFixed(1)} L</span></div>
+                      <div>Range: <span className="text-cyan-300 font-bold">{assignment.fuel_lower_l?.toFixed(1)}–{assignment.fuel_upper_l?.toFixed(1)} L</span></div>
+                      <div>Uncertainty: <span className="text-slate-400">±{assignment.uncertainty_l?.toFixed(1)} L</span></div>
+                      <div>Risk-Adjusted: <span className="text-amber-400 font-bold">{assignment.risk_adjusted_fuel_l?.toFixed(1)} L</span></div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Explainable 5-Factor Suitability Accordion */}
                 {isSelected && scoreInfo?.breakdown && (
                   <div className="mt-3 pt-2 border-t border-slate-800/80 text-[10px] space-y-1.5 bg-slate-900/60 p-2 rounded">
@@ -176,6 +207,7 @@ export default function FleetStatus({
                     </div>
                   </div>
                 )}
+
               </div>
             )
           })

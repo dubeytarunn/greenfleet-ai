@@ -10,12 +10,18 @@ from .route import RouteModel
 
 class PredictionModel(BaseModel):
     """
-    Fuel & CO2 forecast for a single (vehicle, route) pair.
+    Fuel & CO2 forecast for a single (vehicle, route) pair with conformal prediction bounds.
     """
     vehicle_id: str
     route_id: str
     predicted_fuel_l: float = Field(..., ge=0.0, description="Predicted fuel consumption in litres")
     estimated_co2_kg: float = Field(..., ge=0.0, description="Estimated CO2 emissions in kg")
+    fuel_lower_l: Optional[float] = Field(default=None, description="Lower conformal prediction bound (litres)")
+    fuel_upper_l: Optional[float] = Field(default=None, description="Upper conformal prediction bound (litres)")
+    uncertainty_l: Optional[float] = Field(default=None, description="Uncertainty half-width in litres")
+    uncertainty_pct: Optional[float] = Field(default=None, description="Relative uncertainty percentage (%)")
+    risk_adjusted_fuel_l: Optional[float] = Field(default=None, description="Risk-adjusted fuel: F_hat + lambda * uncertainty")
+    confidence_level: Optional[float] = Field(default=0.90, description="Conformal coverage confidence level")
     confidence: Optional[float] = Field(default=0.95, description="Model prediction confidence score")
 
 
@@ -33,12 +39,17 @@ class ForecastResponse(BaseModel):
 
 class AssignmentModel(BaseModel):
     """
-    Locked contract assignment representation.
+    Locked contract assignment representation extended with risk metrics.
     """
     vehicle_id: str
     route_id: str
     predicted_fuel_l: Optional[float] = Field(default=None, description="Fuel required in litres")
     estimated_co2_kg: Optional[float] = Field(default=None, description="CO2 emissions in kg")
+    fuel_lower_l: Optional[float] = Field(default=None, description="Lower conformal bound (litres)")
+    fuel_upper_l: Optional[float] = Field(default=None, description="Upper conformal bound (litres)")
+    uncertainty_l: Optional[float] = Field(default=None, description="Uncertainty half-width in litres")
+    uncertainty_pct: Optional[float] = Field(default=None, description="Relative uncertainty (%)")
+    risk_adjusted_fuel_l: Optional[float] = Field(default=None, description="Risk-adjusted fuel consumption (litres)")
     operating_cost: Optional[float] = Field(default=None, description="Calculated operating cost ($)")
     status: str = Field(default="assigned", description="Assignment status ('assigned' or 'unassigned')")
 
@@ -48,6 +59,7 @@ class OptimizationConfigModel(BaseModel):
     fuel_weight: float = Field(default=1.0, description="Weight on fuel consumption")
     co2_weight: float = Field(default=1.0, description="Weight on emissions")
     distance_weight: float = Field(default=0.3, description="Weight on distance penalty")
+    risk_aversion_lambda: float = Field(default=0.5, ge=0.0, le=5.0, description="Dispatcher risk aversion lambda")
     imbalance_weight: float = Field(default=0.5, description="Weight on workload imbalance")
     capacity_shortfall_penalty: float = Field(default=5000.0, description="Penalty for insufficient vehicle capacity")
     constraint_penalty: float = Field(default=50000.0, description="Penalty for hard constraint violations")
@@ -56,6 +68,7 @@ class OptimizationConfigModel(BaseModel):
     min_temp: float = Field(default=1e-3, description="Annealing minimum temperature")
     max_iterations: int = Field(default=20000, description="Maximum solver iterations")
     seed: Optional[int] = Field(default=42, description="Random seed for reproducibility")
+
 
 
 class OptimizeRequest(BaseModel):

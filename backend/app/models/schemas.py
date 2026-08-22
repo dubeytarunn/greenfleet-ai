@@ -61,19 +61,31 @@ class Route(BaseModel):
 
 class Prediction(BaseModel):
     """
-    Standard ML consumption & emissions prediction output.
+    Standard ML consumption & emissions prediction output with conformal prediction bounds.
     Example:
     {
       "vehicle_id": "V001",
       "route_id": "R001",
       "predicted_fuel_l": 18.4,
-      "estimated_co2_kg": 48.8
+      "fuel_lower_l": 15.6,
+      "fuel_upper_l": 21.2,
+      "uncertainty_l": 2.8,
+      "uncertainty_pct": 15.2,
+      "risk_adjusted_fuel_l": 19.8,
+      "estimated_co2_kg": 48.8,
+      "confidence_level": 0.90
     }
     """
     vehicle_id: str = Field(..., description="Target vehicle identifier")
     route_id: str = Field(..., description="Target route identifier")
     predicted_fuel_l: float = Field(..., ge=0, description="Predicted fuel or energy consumption in litres/kWh")
     estimated_co2_kg: float = Field(..., ge=0, description="Estimated greenhouse emissions in kg CO2e")
+    fuel_lower_l: Optional[float] = Field(default=None, description="Lower conformal bound (litres)")
+    fuel_upper_l: Optional[float] = Field(default=None, description="Upper conformal bound (litres)")
+    uncertainty_l: Optional[float] = Field(default=None, description="Prediction uncertainty half-width (litres)")
+    uncertainty_pct: Optional[float] = Field(default=None, description="Relative uncertainty percentage (%)")
+    risk_adjusted_fuel_l: Optional[float] = Field(default=None, description="Risk-adjusted fuel: F_hat + lambda * uncertainty")
+    confidence_level: Optional[float] = Field(default=0.90, description="Conformal coverage confidence level")
 
 
 class Assignment(BaseModel):
@@ -84,16 +96,23 @@ class Assignment(BaseModel):
       "vehicle_id": "V001",
       "route_id": "R001",
       "predicted_fuel_l": 18.4,
+      "risk_adjusted_fuel_l": 19.8,
       "status": "assigned"
     }
     """
     vehicle_id: str = Field(..., description="Assigned vehicle ID")
     route_id: str = Field(..., description="Assigned route ID")
     predicted_fuel_l: float = Field(..., ge=0, description="Predicted fuel or energy consumption for this assignment")
+    fuel_lower_l: Optional[float] = Field(default=None, description="Lower conformal bound (litres)")
+    fuel_upper_l: Optional[float] = Field(default=None, description="Upper conformal bound (litres)")
+    uncertainty_l: Optional[float] = Field(default=None, description="Uncertainty half-width (litres)")
+    uncertainty_pct: Optional[float] = Field(default=None, description="Relative uncertainty (%)")
+    risk_adjusted_fuel_l: Optional[float] = Field(default=None, description="Risk-adjusted fuel (litres)")
     status: Literal["assigned", "unassigned", "failed", "pending"] = Field(
         default="assigned",
         description="Assignment status"
     )
+
 
 
 # ---------------------------------------------------------------------------

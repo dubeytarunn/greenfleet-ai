@@ -40,7 +40,11 @@ except Exception as e:
     ML_AVAILABLE = False
 
 
-def _physics_fallback_fuel(vehicle: VehicleModel, route: RouteModel) -> float:
+def _physics_fallback_prediction(
+    vehicle: VehicleModel,
+    route: RouteModel,
+    risk_aversion_lambda: float = 0.5,
+) -> Dict[str, float]:
     """
     High-fidelity physics-based fuel estimation fallback in case ML model is unavailable.
     Fuel (L) = (Base_Rate * Distance / 100) * Load_Factor * Traffic_Factor * Age_Factor
@@ -72,47 +76,81 @@ def _physics_fallback_fuel(vehicle: VehicleModel, route: RouteModel) -> float:
     age_multiplier = 1.0 + (vehicle.vehicle_age * 0.015)
     
     total_fuel = (base_l_per_100km * (route.distance_km / 100.0)) * load_multiplier * traffic_multiplier * age_multiplier
-    return round(float(max(1.0, total_fuel)), 1)
+    pred_fuel = round(float(max(1.0, total_fuel)), 1)
+    
+    # Conformal dispersion scaling
+    traffic_stress = max(0.0, route.traffic_factor - 1.0)
+    dispersion = 1.0 + (0.35 * traffic_stress) + (0.25 * load_ratio) + (0.04 * vehicle.vehicle_age)
+    uncertainty = round(float(1.805 * dispersion), 2)
+    fuel_lower = round(float(max(0.1, pred_fuel - uncertainty)), 2)
+    fuel_upper = round(float(pred_fuel + uncertainty), 2)
+    unc_pct = round(float((uncertainty / pred_fuel) * 100.0), 1)
+    risk_adj = round(float(pred_fuel + (max(0.0, risk_aversion_lambda) * uncertainty)), 2)
+    
+    return {
+        "predicted_fuel_l": pred_fuel,
+        "fuel_lower_l": fuel_lower,
+        "fuel_upper_l": fuel_upper,
+        "uncertainty_l": uncertainty,
+        "uncertainty_pct": unc_pct,
+        "risk_adjusted_fuel_l": risk_adj,
+    }
 
 
 def predict_fuel_and_co2(
     vehicles: List[VehicleModel],
     routes: List[RouteModel],
+    risk_aversion_lambda: float = 0.5,
 ) -> List[PredictionModel]:
     """
-    Generates fuel and CO2 predictions for all (vehicle, route) pairs.
-    Uses Person 1's trained ML model if available; otherwise uses physics fallback.
+    Generates fuel and CO2 predictions with conformal uncertainty bounds for all (vehicle, route) pairs.
+    Uses trained LightGBM ML model if available; otherwise uses physics fallback.
     """
     predictions: List[PredictionModel] = []
     
     for v in vehicles:
         for r in routes:
-            pred_fuel = None
-            pred_co2 = None
+            trip_data: Optional[Dict[str, Any]] = None
             
             if ML_AVAILABLE:
                 try:
                     v_dict = v.model_dump()
                     r_dict = r.model_dump()
-                    trip_res = predict_trip(v_dict, r_dict)
-                    pred_fuel = float(trip_res["predicted_fuel_l"])
-                    pred_co2 = float(trip_res["estimated_co2_kg"])
+                    trip_data = predict_trip(v_dict, r_dict, risk_aversion_lambda=risk_aversion_lambda)
                 except Exception as ex:
                     logger.debug(f"ML inference fallback for ({v.vehicle_id}, {r.route_id}): {ex}")
             
-            if pred_fuel is None:
-                pred_fuel = _physics_fallback_fuel(v, r)
+            if trip_data is None:
+                phys = _physics_fallback_prediction(v, r, risk_aversion_lambda=risk_aversion_lambda)
                 factor = settings.EMISSION_FACTORS_KG_CO2_PER_LITRE.get(
                     v.fuel_type, settings.EMISSION_FACTORS_KG_CO2_PER_LITRE["Default"]
                 )
-                pred_co2 = round(pred_fuel * factor, 1)
+                co2_val = round(phys["predicted_fuel_l"] * factor, 1)
+                trip_data = {
+                    "vehicle_id": v.vehicle_id,
+                    "route_id": r.route_id,
+                    "predicted_fuel_l": phys["predicted_fuel_l"],
+                    "fuel_lower_l": phys["fuel_lower_l"],
+                    "fuel_upper_l": phys["fuel_upper_l"],
+                    "uncertainty_l": phys["uncertainty_l"],
+                    "uncertainty_pct": phys["uncertainty_pct"],
+                    "risk_adjusted_fuel_l": phys["risk_adjusted_fuel_l"],
+                    "estimated_co2_kg": co2_val,
+                    "confidence_level": 0.90,
+                }
             
             predictions.append(
                 PredictionModel(
                     vehicle_id=v.vehicle_id,
                     route_id=r.route_id,
-                    predicted_fuel_l=pred_fuel,
-                    estimated_co2_kg=pred_co2,
+                    predicted_fuel_l=trip_data["predicted_fuel_l"],
+                    estimated_co2_kg=trip_data["estimated_co2_kg"],
+                    fuel_lower_l=trip_data.get("fuel_lower_l"),
+                    fuel_upper_l=trip_data.get("fuel_upper_l"),
+                    uncertainty_l=trip_data.get("uncertainty_l"),
+                    uncertainty_pct=trip_data.get("uncertainty_pct"),
+                    risk_adjusted_fuel_l=trip_data.get("risk_adjusted_fuel_l"),
+                    confidence_level=trip_data.get("confidence_level", 0.90),
                     confidence=0.95 if ML_AVAILABLE else 0.85,
                 )
             )
@@ -128,10 +166,11 @@ def run_greenflow_optimizer(
     method: str = "quantum_inspired",
 ) -> Dict[str, Any]:
     """
-    Runs the optimizer (Person 3 interface) and returns full metrics.
+    Runs the optimizer (Person 3 interface) with risk-adjusted fuel and dynamic carbon weight.
     """
+    lambda_val = config.risk_aversion_lambda if config else 0.5
     if predictions is None:
-        predictions = predict_fuel_and_co2(vehicles, routes)
+        predictions = predict_fuel_and_co2(vehicles, routes, risk_aversion_lambda=lambda_val)
         
     # Convert Pydantic models to Person 3 Core Dataclasses
     core_vehicles = [
@@ -166,6 +205,12 @@ def run_greenflow_optimizer(
             route_id=p.route_id,
             predicted_fuel_l=p.predicted_fuel_l,
             estimated_co2_kg=p.estimated_co2_kg,
+            fuel_lower_l=p.fuel_lower_l,
+            fuel_upper_l=p.fuel_upper_l,
+            uncertainty_l=p.uncertainty_l,
+            uncertainty_pct=p.uncertainty_pct,
+            risk_adjusted_fuel_l=p.risk_adjusted_fuel_l,
+            confidence_level=p.confidence_level or 0.90,
         )
         for p in predictions
     ]
@@ -176,6 +221,7 @@ def run_greenflow_optimizer(
             fuel_weight=config.fuel_weight,
             co2_weight=config.co2_weight,
             distance_weight=config.distance_weight,
+            risk_aversion_lambda=config.risk_aversion_lambda,
             imbalance_weight=config.imbalance_weight,
             capacity_shortfall_penalty=config.capacity_shortfall_penalty,
             constraint_penalty=config.constraint_penalty,
@@ -237,10 +283,16 @@ def run_greenflow_optimizer(
                 route_id=r_id,
                 predicted_fuel_l=round(fuel_val, 1),
                 estimated_co2_kg=round(co2_val, 1),
+                fuel_lower_l=item.get("fuel_lower_l") or (pred.fuel_lower_l if pred else None),
+                fuel_upper_l=item.get("fuel_upper_l") or (pred.fuel_upper_l if pred else None),
+                uncertainty_l=item.get("uncertainty_l") or (pred.uncertainty_l if pred else None),
+                uncertainty_pct=item.get("uncertainty_pct") or (pred.uncertainty_pct if pred else None),
+                risk_adjusted_fuel_l=item.get("risk_adjusted_fuel_l") or (pred.risk_adjusted_fuel_l if pred else None),
                 operating_cost=op_cost,
                 status="assigned",
             )
         )
+
     
     avail_count = sum(1 for v in vehicles if v.available)
     utilisation = (len(assignment_models) / max(avail_count, 1)) * 100.0 if avail_count > 0 else 0.0

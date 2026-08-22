@@ -38,8 +38,9 @@ CARBON_WARNING_THRESHOLD: float = 0.70      # 70% utilisation
 CARBON_CRITICAL_THRESHOLD: float = 0.90     # 90% utilisation
 CARBON_OVER_BUDGET_THRESHOLD: float = 1.00  # 100% utilisation
 
-# Default planning horizon budget (configurable per fleet/scenario)
-DEFAULT_CARBON_BUDGET_KG: float = 5000.0
+# Default operational shift planning horizon budget (configurable per fleet/scenario)
+DEFAULT_SHIFT_BUDGET_KG: float = 1500.0
+DEFAULT_CARBON_BUDGET_KG: float = DEFAULT_SHIFT_BUDGET_KG
 
 
 class CarbonBudgetState(BaseModel):

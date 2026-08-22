@@ -105,12 +105,17 @@ class Route:
 @dataclass
 class Prediction:
     """One row of Person 1's fuel/CO2 prediction output for a specific
-    (vehicle, route) pair. The optimizer looks these up rather than deriving
-    fuel/CO2 from a static per-vehicle efficiency figure."""
+    (vehicle, route) pair. Extended with conformal prediction bounds and risk-adjusted fuel."""
     vehicle_id: str
     route_id: str
     predicted_fuel_l: float
     estimated_co2_kg: float
+    fuel_lower_l: Optional[float] = None
+    fuel_upper_l: Optional[float] = None
+    uncertainty_l: Optional[float] = None
+    uncertainty_pct: Optional[float] = None
+    risk_adjusted_fuel_l: Optional[float] = None
+    confidence_level: Optional[float] = 0.90
 
 
 # Contract-driven design decisions (no field in the locked schema covers
@@ -137,6 +142,7 @@ class OptimizationConfig:
     fuel_weight: float = 1.0
     co2_weight: float = 1.0
     distance_weight: float = 0.3
+    risk_aversion_lambda: float = 0.5   # Dispatcher risk aversion lambda (0.0 = risk-neutral, >0 = risk-averse)
     imbalance_weight: float = 0.5
     capacity_shortfall_penalty: float = 5_000.0   # vehicle too small for the route
     constraint_penalty: float = 50_000.0          # hard-constraint violations (SA only)
@@ -145,6 +151,7 @@ class OptimizationConfig:
     min_temp: float = 1e-3
     max_iterations: int = 20_000
     seed: Optional[int] = None
+
 
 
 @dataclass
@@ -202,7 +209,7 @@ class QuantumInspiredOptimizer:
     # ---- cost matrix ------------------------------------------------
 
     def _build_cost_matrix(self) -> np.ndarray:
-        """cost_ij = fuel_cost + co2_penalty + distance_penalty (+ capacity shortfall),
+        """cost_ij = fuel_cost (risk-adjusted) + co2_penalty + distance_penalty (+ capacity shortfall),
         scaled by route priority. fuel/CO2 come from the Prediction lookup, not
         a formula — a missing prediction makes the cell infeasible."""
         cost = np.zeros((self.n, self.m))
@@ -217,7 +224,17 @@ class QuantumInspiredOptimizer:
                     cost[i, j] = 1e9  # no fuel/CO2 prediction for this pair: unpriceable
                     continue
 
-                fuel_cost = pred.predicted_fuel_l * self.config.fuel_weight
+                # Risk-aware fuel consumption: F_risk = F_hat + lambda * (F_high - F_hat)
+                if pred.risk_adjusted_fuel_l is not None:
+                    effective_fuel = pred.risk_adjusted_fuel_l
+                elif pred.uncertainty_l is not None:
+                    effective_fuel = pred.predicted_fuel_l + (self.config.risk_aversion_lambda * pred.uncertainty_l)
+                elif pred.fuel_upper_l is not None:
+                    effective_fuel = pred.predicted_fuel_l + (self.config.risk_aversion_lambda * (pred.fuel_upper_l - pred.predicted_fuel_l))
+                else:
+                    effective_fuel = pred.predicted_fuel_l
+
+                fuel_cost = effective_fuel * self.config.fuel_weight
                 co2_penalty = pred.estimated_co2_kg * self.config.co2_weight
                 distance_penalty = r.distance_km * r.traffic_factor * self.config.distance_weight
 
@@ -232,6 +249,7 @@ class QuantumInspiredOptimizer:
                         fuel_cost + co2_penalty + distance_penalty + capacity_penalty
                     ) * r.priority
         return cost
+
 
     # ---- shared cost/penalty evaluation ------------------------------
 
@@ -570,8 +588,8 @@ class QuantumInspiredOptimizer:
         return checks
 
     def to_assignment_list(self, result: AssignmentResult) -> List[Dict[str, object]]:
-        """Turns the matrix into the locked Assignment output contract:
-        [{"vehicle_id", "route_id", "predicted_fuel_l", "status"}, ...].
+        """Turns the matrix into the locked Assignment output contract extended with uncertainty fields:
+        [{"vehicle_id", "route_id", "predicted_fuel_l", "fuel_lower_l", "fuel_upper_l", "uncertainty_l", "risk_adjusted_fuel_l", "status"}, ...].
         `predicted_fuel_l` is pulled from the Prediction lookup for the
         chosen pair, not recomputed."""
         pairs = []
@@ -580,10 +598,21 @@ class QuantumInspiredOptimizer:
             vehicle = self.vehicles[i]
             route = self.routes[j]
             pred = self._prediction_lookup.get((vehicle.vehicle_id, route.route_id))
+            
+            risk_fuel = pred.risk_adjusted_fuel_l if pred else None
+            if pred and risk_fuel is None and pred.uncertainty_l is not None:
+                risk_fuel = round(pred.predicted_fuel_l + (self.config.risk_aversion_lambda * pred.uncertainty_l), 2)
+
             pairs.append({
                 "vehicle_id": vehicle.vehicle_id,
                 "route_id": route.route_id,
                 "predicted_fuel_l": pred.predicted_fuel_l if pred else None,
+                "fuel_lower_l": pred.fuel_lower_l if pred else None,
+                "fuel_upper_l": pred.fuel_upper_l if pred else None,
+                "uncertainty_l": pred.uncertainty_l if pred else None,
+                "uncertainty_pct": pred.uncertainty_pct if pred else None,
+                "risk_adjusted_fuel_l": risk_fuel,
                 "status": "assigned",
             })
         return pairs
+
