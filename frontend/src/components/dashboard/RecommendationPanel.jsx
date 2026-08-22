@@ -74,7 +74,7 @@ export default function RecommendationPanel({ recommendation, isOptimized, onOpt
               <CloudFog className="h-3 w-3 text-emerald-400" /> CO₂ Avoided
             </div>
             <div className="text-xs font-bold text-emerald-400 mt-0.5">
-              {recommendation.expected_impact.co2_avoided}
+              {recommendation.expected_impact?.co2_avoided || '--'}
             </div>
           </div>
 
@@ -83,7 +83,7 @@ export default function RecommendationPanel({ recommendation, isOptimized, onOpt
               <Fuel className="h-3 w-3 text-cyan-400" /> Fuel Saved
             </div>
             <div className="text-xs font-bold text-cyan-400 mt-0.5">
-              {recommendation.expected_impact.fuel_saved}
+              {recommendation.expected_impact?.fuel_saved || '--'}
             </div>
           </div>
 
@@ -92,11 +92,12 @@ export default function RecommendationPanel({ recommendation, isOptimized, onOpt
               <IndianRupee className="h-3 w-3 text-amber-400" /> Direct Saving
             </div>
             <div className="text-xs font-bold text-amber-400 mt-0.5">
-              {recommendation.expected_impact.direct_fuel_saving}
+              {recommendation.expected_impact?.direct_fuel_saving || '--'}
             </div>
           </div>
         </div>
       </div>
+
 
       <div className="mt-2 text-right">
         <span className="text-[10px] text-slate-500 font-mono italic">
