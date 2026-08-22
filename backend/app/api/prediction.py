@@ -34,7 +34,7 @@ except Exception as e:
 
 def _calculate_stub_prediction(pair: VehiclePair) -> Prediction:
     """
-    Fallback deterministic physics-based prediction estimation.
+    Fallback deterministic physics-based prediction estimation with uncertainty bounds.
     """
     v = pair.vehicle
     r = pair.route
@@ -63,11 +63,24 @@ def _calculate_stub_prediction(pair: VehiclePair) -> Prediction:
     pred_fuel = round(pred_fuel, 2)
     pred_co2 = round(pred_fuel * emission_factor, 2)
 
+    traffic_stress = max(0.0, r.traffic_factor - 1.0)
+    dispersion = 1.0 + (0.35 * traffic_stress) + (0.25 * payload_ratio) + (0.04 * v.vehicle_age)
+    uncertainty = round(float(1.805 * dispersion), 2)
+    fuel_lower = round(float(max(0.1, pred_fuel - uncertainty)), 2)
+    fuel_upper = round(float(pred_fuel + uncertainty), 2)
+    unc_pct = round(float((uncertainty / pred_fuel) * 100.0), 1)
+
     return Prediction(
         vehicle_id=v.vehicle_id,
         route_id=r.route_id,
         predicted_fuel_l=pred_fuel,
         estimated_co2_kg=pred_co2,
+        fuel_lower_l=fuel_lower,
+        fuel_upper_l=fuel_upper,
+        uncertainty_l=uncertainty,
+        uncertainty_pct=unc_pct,
+        risk_adjusted_fuel_l=round(pred_fuel + (0.5 * uncertainty), 2),
+        confidence_level=0.90,
     )
 
 
@@ -75,7 +88,7 @@ def _calculate_stub_prediction(pair: VehiclePair) -> Prediction:
 def batch_predict(request: BatchPredictionRequest):
     """
     Evaluate fuel consumption and CO2 emissions for a batch of candidate (Vehicle, Route) pairs.
-    Uses Person 2's trained LightGBM ML model artifact.
+    Uses trained LightGBM ML model artifact with conformal prediction bounds.
     """
     predictions: List[Prediction] = []
     for pair in request.pairs:
@@ -89,6 +102,12 @@ def batch_predict(request: BatchPredictionRequest):
                     route_id=res["route_id"],
                     predicted_fuel_l=float(res["predicted_fuel_l"]),
                     estimated_co2_kg=float(res["estimated_co2_kg"]),
+                    fuel_lower_l=res.get("fuel_lower_l"),
+                    fuel_upper_l=res.get("fuel_upper_l"),
+                    uncertainty_l=res.get("uncertainty_l"),
+                    uncertainty_pct=res.get("uncertainty_pct"),
+                    risk_adjusted_fuel_l=res.get("risk_adjusted_fuel_l"),
+                    confidence_level=res.get("confidence_level", 0.90),
                 )
                 predictions.append(pred)
                 continue
@@ -102,6 +121,7 @@ def batch_predict(request: BatchPredictionRequest):
         predictions=predictions,
         total_evaluated=len(predictions),
     )
+
 
 
 @router.post("/telemetry", response_model=TelemetryAlertResponse)

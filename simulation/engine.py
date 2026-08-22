@@ -9,7 +9,11 @@ import logging
 from threading import Lock
 from typing import Dict, List, Optional
 
-from backend.app.core.carbon_governor import CarbonBudgetGovernor
+from backend.app.core.carbon_governor import (
+    CarbonBudgetGovernor,
+    CarbonBudgetStatus,
+    DEFAULT_SHIFT_BUDGET_KG,
+)
 from backend.app.core.config import settings
 from backend.app.core.integration import predict_fuel_and_co2, run_greenflow_optimizer
 from backend.app.models.assignment import (
@@ -38,7 +42,7 @@ class SimulationEngine:
     Guarantees thread-safe deterministic state transitions.
     """
 
-    def __init__(self, initial_budget_kg: float = 5000.0):
+    def __init__(self, initial_budget_kg: float = DEFAULT_SHIFT_BUDGET_KG):
         self._lock = Lock()
         self.scenario: ScenarioType = ScenarioType.NORMAL
         self.status: str = "initialized"
