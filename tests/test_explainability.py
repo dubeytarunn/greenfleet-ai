@@ -259,6 +259,45 @@ class TestExplainabilityEngine(unittest.TestCase):
         self.assertEqual(exp.risk_context.target_uncertainty_l, 2.0)
         self.assertIn("Conformal prediction interval", exp.risk_context.risk_narrative)
 
+    def test_9_tie_suitability_explains_cost_difference(self):
+        """Verify that when target and alternative have identical suitability score, explanation explicitly cites optimization cost."""
+        # Create identical twin vehicle with same specs
+        v_twin = VehicleModel(
+            vehicle_id="V019",
+            vehicle_type="Van",
+            fuel_type="Diesel",
+            vehicle_age=2,
+            fuel_capacity_l=80.0,
+            max_payload_kg=1500.0,
+            available=True,
+        )
+        fleet = [self.v_target, v_twin]
+        preds = [
+            self.predictions[0],  # V001
+            PredictionModel(
+                vehicle_id="V019",
+                route_id="R001",
+                predicted_fuel_l=12.5, # Slightly higher fuel => slightly higher QUBO cost
+                estimated_co2_kg=33.5,
+                uncertainty_l=2.0,
+                risk_adjusted_fuel_l=13.5,
+            )
+        ]
+        exp = explain_assignment(
+            target_vehicle=self.v_target,
+            target_route=self.route,
+            fleet=fleet,
+            routes=self.routes,
+            predictions=preds,
+            carbon_budget=self.carbon_budget,
+        )
+        self.assertEqual(exp.alternative.vehicle_id, "V019")
+        # Suitability score is identical or near-identical
+        self.assertAlmostEqual(exp.alternative.delta_score, 0.0, places=0)
+        # Summary verdict explicitly clarifies cost preference rather than claiming score gap
+        self.assertIn("equivalent suitability", exp.summary_verdict)
+        self.assertIn("QUBO optimization cost", exp.summary_verdict)
+
 
 class TestSimulationExplainabilityIntegration(unittest.TestCase):
     """Integration tests verifying end-to-end simulation explainability endpoints."""
@@ -284,3 +323,5 @@ class TestSimulationExplainabilityIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+

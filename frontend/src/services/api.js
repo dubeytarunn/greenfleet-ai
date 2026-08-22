@@ -169,8 +169,54 @@ export async function optimize(payload) {
  * Fetch deterministic 5-factor explanation, best alternative, and counterfactual sensitivity for an assignment.
  */
 export async function getAssignmentExplanation(vehicleId) {
-  return request(`/api/simulate/explanation/${vehicleId}`)
+  return request(`/api/assignments/${vehicleId}/explanation`)
 }
+
+// --------------------------------------------------------------------------
+// 3. Commercial Decision Support & Economics Endpoints
+// --------------------------------------------------------------------------
+
+/**
+ * Fetch differentiated economic savings statement (direct fuel savings & carbon shadow value in INR).
+ */
+export async function getEconomics() {
+  return request('/api/simulate/economics')
+}
+
+/**
+ * Update fuel price assumptions or internal carbon shadow price.
+ */
+export async function updateEconomics(payload) {
+  return request('/api/simulate/economics', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/**
+ * Fetch dynamic dispatcher "What Should I Do?" actionable recommendation.
+ */
+export async function getRecommendation() {
+  return request('/api/simulate/recommendation')
+}
+
+/**
+ * Execute non-mutating 4-parameter what-if planning simulation.
+ */
+export async function simulateWhatIf(payload) {
+  return request('/api/simulate/what-if', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/**
+ * Fetch 4-scenario comparative planning matrix (Normal, Peak, High Traffic, Carbon Constrained).
+ */
+export async function getScenarioMatrix() {
+  return request('/api/simulate/scenarios')
+}
+
 
 export default {
   getSimulationState,
@@ -182,11 +228,17 @@ export default {
   getCarbonBudget,
   setCarbonBudget,
   getAssignmentExplanation,
+  getEconomics,
+  updateEconomics,
+  getRecommendation,
+  simulateWhatIf,
+  getScenarioMatrix,
   getFleet,
   getRoutes,
   getScoring,
   getPrediction,
   optimize,
 }
+
 
 

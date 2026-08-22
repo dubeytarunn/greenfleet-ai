@@ -82,10 +82,10 @@ def get_carbon_budget_direct():
 
 
 @app.get("/api/assignments/{vehicle_id}/explanation", summary="Get deterministic assignment explanation")
-@app.get("/api/explain/{vehicle_id}", summary="Get deterministic assignment explanation")
 def get_assignment_explanation_direct(vehicle_id: str):
     from simulation.engine import simulation_engine
     return simulation_engine.get_assignment_explanation(vehicle_id)
+
 
 
 

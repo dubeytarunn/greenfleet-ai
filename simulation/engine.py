@@ -16,11 +16,29 @@ from backend.app.core.carbon_governor import (
 )
 from backend.app.core.config import settings
 from backend.app.core.explainability import explain_assignment
+from backend.app.core.economics import (
+    calculate_fleet_fuel_cost,
+    calculate_economic_savings_breakdown,
+    generate_actionable_recommendation,
+    run_what_if_simulation,
+    compile_scenario_matrix,
+    DEFAULT_FUEL_PRICING,
+    DEFAULT_CARBON_PRICING,
+)
 from backend.app.core.integration import predict_fuel_and_co2, run_greenflow_optimizer
 from backend.app.models.assignment import (
     AssignmentModel,
     OptimizationConfigModel,
     PredictionModel,
+)
+from backend.app.models.economics import (
+    ActionableRecommendation,
+    CarbonPricingConfig,
+    EconomicSavingsBreakdown,
+    FuelPricingConfig,
+    ScenarioMatrixResponse,
+    WhatIfProjection,
+    WhatIfRequest,
 )
 from backend.app.models.explainability import AssignmentExplanationResponse
 from backend.app.models.route import RouteModel
@@ -52,6 +70,8 @@ class SimulationEngine:
         self.last_updated: str = datetime.utcnow().isoformat()
         
         self.carbon_governor = CarbonBudgetGovernor(budget_kg=initial_budget_kg)
+        self.fuel_pricing: FuelPricingConfig = DEFAULT_FUEL_PRICING.model_copy()
+        self.carbon_pricing: CarbonPricingConfig = DEFAULT_CARBON_PRICING.model_copy()
         
         self.vehicles: List[VehicleModel] = []
         self.routes: List[RouteModel] = []
@@ -63,6 +83,7 @@ class SimulationEngine:
         
         # Initialize default state
         self.reset()
+
 
     def reset(self, budget_kg: Optional[float] = None) -> SimulationStateResponse:
         """Restores the simulation to the deterministic Normal Fleet initial state."""
@@ -316,12 +337,12 @@ class SimulationEngine:
 
 
     def _calculate_kpis(self, assignments: List[AssignmentModel], strategy_name: str) -> BenchmarkKPIs:
-        """Calculates dynamic operational metrics for a set of assignments."""
+        """Calculates dynamic operational metrics for a set of assignments using dynamic fuel pricing."""
         valid_assignments = [a for a in assignments if a.status == "assigned" and a.predicted_fuel_l is not None]
         
         total_fuel = sum(a.predicted_fuel_l for a in valid_assignments)
         total_co2 = sum(a.estimated_co2_kg for a in valid_assignments if a.estimated_co2_kg is not None)
-        total_cost = sum(a.operating_cost for a in valid_assignments if a.operating_cost is not None)
+        total_cost = calculate_fleet_fuel_cost(valid_assignments, self.vehicles, self.fuel_pricing)
         
         available_vehicles_count = sum(1 for v in self.vehicles if v.available)
         assigned_count = len(valid_assignments)
@@ -365,6 +386,87 @@ class SimulationEngine:
             average_fuel_per_route_l=round(avg_fuel, 1),
         )
 
+    def get_economic_breakdown(self) -> EconomicSavingsBreakdown:
+        """Returns the differentiated economic savings breakdown."""
+        with self._lock:
+            active_greenflow = self.greenflow_assignments if self.greenflow_assignments else self.baseline_assignments
+            return calculate_economic_savings_breakdown(
+                baseline_assignments=self.baseline_assignments,
+                greenflow_assignments=active_greenflow,
+                vehicles=self.vehicles,
+                fuel_pricing=self.fuel_pricing,
+                carbon_pricing=self.carbon_pricing,
+            )
+
+    def get_actionable_recommendation(self) -> ActionableRecommendation:
+        """Generates dynamic dispatcher recommendation derived directly from active state."""
+        with self._lock:
+            gov_state = self.carbon_governor.get_state()
+            active_greenflow = self.greenflow_assignments if self.greenflow_assignments else self.baseline_assignments
+            is_opt = bool(self.greenflow_assignments and len(self.greenflow_assignments) > 0)
+            
+            econ = calculate_economic_savings_breakdown(
+                baseline_assignments=self.baseline_assignments,
+                greenflow_assignments=active_greenflow,
+                vehicles=self.vehicles,
+                fuel_pricing=self.fuel_pricing,
+                carbon_pricing=self.carbon_pricing,
+            )
+            
+            # Count reassigned routes
+            base_map = {a.route_id: a.vehicle_id for a in self.baseline_assignments if a.status == "assigned"}
+            opt_map = {a.route_id: a.vehicle_id for a in active_greenflow if a.status == "assigned"}
+            reassigned_count = sum(1 for r_id, v_id in opt_map.items() if base_map.get(r_id) != v_id)
+            
+            bmk = self.benchmark
+            fuel_saved = bmk.fuel_saved_l if bmk else 0.0
+            
+            return generate_actionable_recommendation(
+                scenario=self.scenario,
+                carbon_status=gov_state.status,
+                quota_utilisation_pct=gov_state.budget_utilisation_pct,
+                co2_avoided_kg=econ.co2_avoided_kg,
+                fuel_saved_l=fuel_saved,
+                direct_cost_saved=econ.direct_fuel_cost_saved,
+                shadow_value=econ.avoided_carbon_shadow_value,
+                reassigned_count=reassigned_count,
+                is_optimized=is_opt,
+            )
+
+    def simulate_what_if(self, request: WhatIfRequest) -> WhatIfProjection:
+        """Runs isolated, non-mutating what-if simulation comparing current plan vs projected plan."""
+        with self._lock:
+            active_greenflow = self.greenflow_assignments if self.greenflow_assignments else self.baseline_assignments
+            return run_what_if_simulation(
+                current_vehicles=self.vehicles,
+                current_routes=self.routes,
+                current_greenflow_assignments=active_greenflow,
+                current_benchmark=self.benchmark,
+                request=request,
+                fuel_pricing=self.fuel_pricing,
+            )
+
+    def get_scenario_matrix(self) -> ScenarioMatrixResponse:
+        """Returns standard 4-scenario comparative planning matrix."""
+        with self._lock:
+            return compile_scenario_matrix(
+                active_scenario_key=self.scenario.value,
+                fuel_pricing=self.fuel_pricing,
+            )
+
+    def update_fuel_pricing(self, pricing: FuelPricingConfig):
+        """Updates fuel pricing assumptions and triggers KPI recalculation."""
+        with self._lock:
+            self.fuel_pricing = pricing
+            if self.benchmark:
+                self.benchmark = None
+                self.get_benchmark()
+
+    def update_carbon_pricing(self, pricing: CarbonPricingConfig):
+        """Updates internal carbon shadow pricing."""
+        with self._lock:
+            self.carbon_pricing = pricing
+
     def _build_state_response(self) -> SimulationStateResponse:
         gov_state = self.carbon_governor.get_state()
         carbon_model = CarbonBudgetModel(**gov_state.model_dump())
@@ -386,3 +488,4 @@ class SimulationEngine:
 
 # Global singleton instance
 simulation_engine = SimulationEngine()
+

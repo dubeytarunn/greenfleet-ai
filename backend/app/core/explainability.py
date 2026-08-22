@@ -88,6 +88,10 @@ def explain_assignment(
     co2_weight = carbon_budget.dynamic_co2_penalty if carbon_budget else 1.0
     budget_status = carbon_budget.status if carbon_budget else CarbonBudgetStatus.HEALTHY
     budget_util = carbon_budget.budget_utilisation_pct if carbon_budget else 69.5
+    target_cost = round(_calculate_assignment_cost(
+        target_vehicle, target_route, target_pred, co2_weight=co2_weight, risk_aversion_lambda=risk_aversion_lambda
+    ), 2)
+
 
     target_details = TargetAssignmentDetails(
         vehicle_id=target_vehicle.vehicle_id,
@@ -111,6 +115,7 @@ def explain_assignment(
         risk_adjusted_fuel_l=target_pred.risk_adjusted_fuel_l if target_pred else None,
         overall_suitability_score=target_score_obj.overall_score,
         breakdown=target_score_obj.breakdown,
+        assignment_cost=target_cost,
     )
 
     # 2. Identify Feasible Alternatives
@@ -154,13 +159,12 @@ def explain_assignment(
         alt_v = top_alt["vehicle"]
         alt_p = top_alt["pred"]
         alt_s = top_alt["score_obj"]
+        alt_assignment_cost = round(top_alt["cost"], 2)
 
         d_score = round(target_score_obj.overall_score - alt_s.overall_score, 1)
         d_fuel = round(alt_p.predicted_fuel_l - target_details.predicted_fuel_l, 1)
         d_co2 = round(alt_p.estimated_co2_kg - target_details.estimated_co2_kg, 1)
-        d_cost = round(top_alt["cost"] - _calculate_assignment_cost(
-            target_vehicle, target_route, target_pred, co2_weight=co2_weight, risk_aversion_lambda=risk_aversion_lambda
-        ), 2)
+        d_cost = round(alt_assignment_cost - target_cost, 2)
 
         best_alt_details = AlternativeVehicleDetails(
             vehicle_id=alt_v.vehicle_id,
@@ -175,11 +179,13 @@ def explain_assignment(
             risk_adjusted_fuel_l=alt_p.risk_adjusted_fuel_l,
             overall_suitability_score=alt_s.overall_score,
             breakdown=alt_s.breakdown,
+            assignment_cost=alt_assignment_cost,
             delta_score=d_score,
             delta_fuel_l=d_fuel,
             delta_co2_kg=d_co2,
             delta_cost=d_cost,
         )
+
 
         # Factor Advantage Decomposition
         t_bk = target_score_obj.breakdown
@@ -341,16 +347,35 @@ def explain_assignment(
 
     # 5. Summary Verdict & Full Narrative Synthesis
     if best_alt_details:
-        summary_verdict = (
-            f"{target_vehicle.vehicle_id} was selected over {best_alt_details.vehicle_id} with a suitability score of "
-            f"{target_score_obj.overall_score:.1f}/100 (+{best_alt_details.delta_score:.1f} pts), saving {best_alt_details.delta_fuel_l:.1f} L fuel "
-            f"and {best_alt_details.delta_co2_kg:.1f} kg CO2e."
-        )
+        if abs(best_alt_details.delta_score) < 0.2:
+            if best_alt_details.delta_cost > 0.05:
+                summary_verdict = (
+                    f"{target_vehicle.vehicle_id} and {best_alt_details.vehicle_id} achieved equivalent suitability scores ({target_score_obj.overall_score:.1f}/100), "
+                    f"but {target_vehicle.vehicle_id} was selected due to a lower QUBO optimization cost ({target_details.assignment_cost:.1f} vs {best_alt_details.assignment_cost:.1f}, saving {best_alt_details.delta_cost:.2f}) "
+                    f"under active carbon (penalty = {co2_weight:.2f}x) and risk (lambda = {risk_aversion_lambda:.1f}) parameters."
+                )
+            elif best_alt_details.delta_cost < -0.05:
+                summary_verdict = (
+                    f"{target_vehicle.vehicle_id} was assigned with equivalent suitability score ({target_score_obj.overall_score:.1f}/100) to {best_alt_details.vehicle_id} "
+                    f"to optimize global multi-route fleet balance."
+                )
+            else:
+                summary_verdict = (
+                    f"{target_vehicle.vehicle_id} and {best_alt_details.vehicle_id} achieved identical suitability ({target_score_obj.overall_score:.1f}/100) and cost profiles. "
+                    f"{target_vehicle.vehicle_id} was allocated by deterministic index priority."
+                )
+        else:
+            summary_verdict = (
+                f"{target_vehicle.vehicle_id} was selected over {best_alt_details.vehicle_id} with a suitability score of "
+                f"{target_score_obj.overall_score:.1f}/100 (+{best_alt_details.delta_score:.1f} pts), saving {best_alt_details.delta_fuel_l:.1f} L fuel "
+                f"and {best_alt_details.delta_co2_kg:.1f} kg CO2e (QUBO cost: {target_details.assignment_cost:.1f} vs {best_alt_details.assignment_cost:.1f})."
+            )
     else:
         summary_verdict = (
             f"{target_vehicle.vehicle_id} is the sole feasible vehicle for route {target_route.route_id} "
             f"with an overall suitability score of {target_score_obj.overall_score:.1f}/100."
         )
+
 
     adv_text = "; ".join(key_advantages) if key_advantages else "Optimally balanced performance."
     full_narrative = (

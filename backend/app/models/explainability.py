@@ -33,6 +33,7 @@ class TargetAssignmentDetails(BaseModel):
     risk_adjusted_fuel_l: Optional[float] = None
     overall_suitability_score: float
     breakdown: ScoreBreakdown
+    assignment_cost: float = Field(default=0.0, description="QUBO objective cost for this assignment")
 
 
 class AlternativeVehicleDetails(BaseModel):
@@ -49,10 +50,12 @@ class AlternativeVehicleDetails(BaseModel):
     risk_adjusted_fuel_l: Optional[float] = None
     overall_suitability_score: float
     breakdown: ScoreBreakdown
+    assignment_cost: float = Field(default=0.0, description="QUBO objective cost for alternative assignment")
     delta_score: float = Field(..., description="Target Score - Alternative Score")
     delta_fuel_l: float = Field(..., description="Alternative Fuel - Target Fuel (positive means target is more efficient)")
     delta_co2_kg: float = Field(..., description="Alternative CO2 - Target CO2 (positive means target reduces emissions)")
-    delta_cost: float = Field(..., description="Operating cost delta")
+    delta_cost: float = Field(..., description="Operating cost delta (Alt_Cost - Target_Cost)")
+
 
 
 class CounterfactualInsight(BaseModel):

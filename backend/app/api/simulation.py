@@ -6,7 +6,7 @@ Assigned to Person 4 (Simulation Engineer).
 """
 
 from typing import Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from backend.app.models.schemas import (
     SimulationRunRequest,
@@ -25,6 +25,15 @@ from simulation.baseline import solve_baseline_heuristic
 from backend.app.core.integration import predict_fuel_and_co2
 from backend.app.models.vehicle import VehicleModel
 from backend.app.models.route import RouteModel
+from backend.app.models.economics import (
+    ActionableRecommendation,
+    CarbonPricingConfig,
+    EconomicSavingsBreakdown,
+    FuelPricingConfig,
+    ScenarioMatrixResponse,
+    WhatIfProjection,
+    WhatIfRequest,
+)
 from backend.app.models.simulation import (
     CarbonBudgetModel,
     ScenarioType,
@@ -34,6 +43,7 @@ from backend.app.models.simulation import (
     ScoringResponse,
 )
 from backend.app.core.scoring import score_fleet_route_pairs
+
 
 router = APIRouter(prefix="/simulate", tags=["Simulation & Benchmarks"])
 
@@ -180,7 +190,6 @@ def configure_carbon_budget(payload: SetCarbonBudgetRequest):
 
 
 @router.get("/explanation/{vehicle_id}", summary="Get deterministic 5-factor explanation and counterfactual for vehicle assignment")
-@router.get("/explain/{vehicle_id}", summary="Get deterministic 5-factor explanation and counterfactual for vehicle assignment")
 def get_assignment_explanation(vehicle_id: str):
     """
     Returns an auditable, deterministic 5-factor explanation, best feasible alternative
@@ -190,6 +199,65 @@ def get_assignment_explanation(vehicle_id: str):
         return simulation_engine.get_assignment_explanation(vehicle_id)
     except ValueError as ex:
         raise HTTPException(status_code=404, detail=str(ex))
+
+
+# ---------------------------------------------------------------------------
+# COMMERCIAL DECISION SUPPORT & ECONOMICS ENDPOINTS
+# ---------------------------------------------------------------------------
+
+class UpdateEconomicsRequest(BaseModel):
+    fuel_pricing: Optional[FuelPricingConfig] = None
+    carbon_pricing: Optional[CarbonPricingConfig] = None
+
+
+@router.get("/economics", response_model=EconomicSavingsBreakdown, summary="Get differentiated shift economic savings statement")
+def get_economic_impact():
+    """
+    Returns the differentiated economic savings report separating direct fuel
+    cost savings (in INR ₹) from internal corporate carbon shadow valuation.
+    """
+    return simulation_engine.get_economic_breakdown()
+
+
+@router.post("/economics", response_model=EconomicSavingsBreakdown, summary="Update fuel price assumptions or carbon shadow valuation")
+def update_economic_assumptions(payload: UpdateEconomicsRequest):
+    """
+    Updates configurable fuel prices or internal carbon shadow price and recalculates economics.
+    """
+    if payload.fuel_pricing:
+        simulation_engine.update_fuel_pricing(payload.fuel_pricing)
+    if payload.carbon_pricing:
+        simulation_engine.update_carbon_pricing(payload.carbon_pricing)
+    return simulation_engine.get_economic_breakdown()
+
+
+@router.get("/recommendation", response_model=ActionableRecommendation, summary="Get dynamic dispatcher 'What Should I Do?' recommendation")
+def get_actionable_recommendation():
+    """
+    Returns real-time, rule-based dispatcher guidance derived directly from active
+    simulation state, carbon budget status, and multi-criteria assignment deltas.
+    """
+    return simulation_engine.get_actionable_recommendation()
+
+
+@router.post("/what-if", response_model=WhatIfProjection, summary="Execute non-mutating 4-parameter what-if planning simulation")
+def simulate_what_if_projection(request: WhatIfRequest):
+    """
+    Runs an isolated, non-mutating what-if simulation comparing the current plan
+    against a projected plan under adjusted carbon budget, traffic, lambda, and fuel price.
+    """
+    return simulation_engine.simulate_what_if(request)
+
+
+@router.get("/scenarios", response_model=ScenarioMatrixResponse, summary="Get 4-scenario comparative planning matrix")
+def get_scenario_comparison_matrix():
+    """
+    Returns standard comparative planning matrix across Normal, Peak Demand,
+    High Traffic, and Carbon-Constrained operational conditions.
+    """
+    return simulation_engine.get_scenario_matrix()
+
+
 
 
 
