@@ -9,6 +9,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
+from . import behavior_registry
 from .config import settings
 from .optimizer import optimize_routes
 from .quantum_optimizer import (
@@ -109,9 +110,17 @@ def predict_fuel_and_co2(
     predictions: List[PredictionModel] = []
     
     for v in vehicles:
+        # Persisted driving-behavior score inflates fuel/CO2 proportionally
+        # for a badly-driven vehicle — applied uniformly regardless of
+        # whether the prediction came from the ML model or the physics
+        # fallback, so a poor driving pattern naturally pushes the optimizer
+        # toward reassigning this vehicle on the next run. Computed once per
+        # vehicle (not per vehicle-route pair) to avoid an O(N*M) DB hit.
+        behavior_multiplier = behavior_registry.get_behavior_multiplier(v.vehicle_id)
+
         for r in routes:
             trip_data: Optional[Dict[str, Any]] = None
-            
+
             if ML_AVAILABLE:
                 try:
                     v_dict = v.model_dump()
@@ -119,7 +128,7 @@ def predict_fuel_and_co2(
                     trip_data = predict_trip(v_dict, r_dict, risk_aversion_lambda=risk_aversion_lambda)
                 except Exception as ex:
                     logger.debug(f"ML inference fallback for ({v.vehicle_id}, {r.route_id}): {ex}")
-            
+
             if trip_data is None:
                 phys = _physics_fallback_prediction(v, r, risk_aversion_lambda=risk_aversion_lambda)
                 factor = settings.EMISSION_FACTORS_KG_CO2_PER_LITRE.get(
@@ -138,7 +147,13 @@ def predict_fuel_and_co2(
                     "estimated_co2_kg": co2_val,
                     "confidence_level": 0.90,
                 }
-            
+
+            if behavior_multiplier != 1.0:
+                for key in ("predicted_fuel_l", "fuel_lower_l", "fuel_upper_l",
+                            "uncertainty_l", "risk_adjusted_fuel_l", "estimated_co2_kg"):
+                    if trip_data.get(key) is not None:
+                        trip_data[key] = round(trip_data[key] * behavior_multiplier, 2)
+
             predictions.append(
                 PredictionModel(
                     vehicle_id=v.vehicle_id,
@@ -230,6 +245,8 @@ def run_greenflow_optimizer(
             min_temp=config.min_temp,
             max_iterations=config.max_iterations,
             seed=config.seed,
+            carbon_budget_kg=config.carbon_budget_kg,
+            enforce_carbon_hard_cap=config.enforce_carbon_hard_cap,
         )
     
     t0 = time.perf_counter()

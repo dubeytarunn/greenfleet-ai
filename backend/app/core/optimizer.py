@@ -65,7 +65,14 @@ def optimize_routes(
     if method == "quantum_inspired":
         result = optimizer.solve_simulated_annealing()
         verification = optimizer.verify_solution(result)
-        if not verification["is_valid"]:
+        hard_cap_active = getattr(optimizer.config, "enforce_carbon_hard_cap", False)
+        # If a hard carbon cap is configured and SA already respects it, never fall
+        # back to classical_baseline() for some other reason (e.g. leaving routes
+        # unassigned to stay under budget trips the general cost-sanity check) —
+        # the classical path's Hungarian fallback can't enforce a global carbon
+        # constraint at all, so falling back would silently blow the cap the
+        # caller explicitly asked to enforce.
+        if not verification["is_valid"] and not (hard_cap_active and verification["within_carbon_budget"]):
             result = optimizer.solve_classical_baseline()
     elif method in ("classical_baseline", "milp"):
         result = optimizer.solve_classical_baseline()

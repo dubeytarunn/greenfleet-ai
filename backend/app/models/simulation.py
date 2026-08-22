@@ -91,6 +91,7 @@ class CarbonBudgetModel(BaseModel):
     status: CarbonBudgetStatus = Field(default=CarbonBudgetStatus.HEALTHY, description="Operational carbon status")
     dynamic_co2_penalty: float = Field(default=1.0, description="Dynamic multiplier w_co2 for optimizer cost matrix")
     co2_avoided_kg: float = Field(default=0.0, description="CO2 saved vs uncoordinated baseline (kg)")
+    hard_cap_enabled: bool = Field(default=False, description="If true, optimizer enforces budget_kg as a hard constraint")
 
 
 class SimulationStateResponse(BaseModel):

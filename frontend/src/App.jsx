@@ -10,9 +10,10 @@ import SettingsTab from './components/settings/SettingsTab.jsx'
 import api from './services/api.js'
 
 // ---------------------------------------------------------------------------
-// Deterministic Fleet & Route Specifications
+// Offline fallback fleet & route specs — used only if the backend is
+// unreachable on first load, so the demo still renders something.
 // ---------------------------------------------------------------------------
-const VEHICLES_INIT = [
+const FALLBACK_VEHICLES = [
   { id: 'V001', driver: 'Driver 001', type: 'Mini Truck', fuel: 'Diesel', capacity: 12, efficiency: 11.5, co2Factor: 2.68, availableNormally: true },
   { id: 'V002', driver: 'Driver 002', type: 'Refrigerated Van', fuel: 'Diesel', capacity: 10, efficiency: 9.2, co2Factor: 2.68, availableNormally: true },
   { id: 'V003', driver: 'Driver 003', type: 'Delivery Van', fuel: 'Petrol', capacity: 14, efficiency: 13.8, co2Factor: 2.31, availableNormally: true },
@@ -20,7 +21,7 @@ const VEHICLES_INIT = [
   { id: 'V005', driver: 'Driver 005', type: 'Light Van (CNG)', fuel: 'CNG', capacity: 8, efficiency: 16.1, co2Factor: 2.1, availableNormally: true },
 ]
 
-const ROUTES_BASE = [
+const FALLBACK_ROUTES = [
   { id: 'R01', area: 'Guindy', distanceKm: 18.4, demand: 10, traffic: 'Low', priority: 'Standard' },
   { id: 'R02', area: 'T Nagar', distanceKm: 27.9, demand: 8, traffic: 'Medium', priority: 'High' },
   { id: 'R03', area: 'Adyar', distanceKm: 12.1, demand: 14, traffic: 'Low', priority: 'Standard' },
@@ -28,27 +29,101 @@ const ROUTES_BASE = [
   { id: 'R05', area: 'Tambaram', distanceKm: 9.7, demand: 6, traffic: 'Medium', priority: 'Standard' },
 ]
 
-const ROUTE_SURGE = { id: 'R06', area: 'Anna Nagar', distanceKm: 22.3, demand: 12, traffic: 'High', priority: 'Critical' }
-
-const ORDERS_INIT = [
+const FALLBACK_ORDERS = [
   { id: 'ORD-1001', route: 'R01', loc: 'Guindy Industrial Estate', boxes: 4, dur: 8, priority: 'Standard' },
   { id: 'ORD-1002', route: 'R01', loc: 'St Thomas Mount', boxes: 3, dur: 6, priority: 'Standard' },
-  { id: 'ORD-1003', route: 'R01', loc: 'Velachery Main Road', boxes: 3, dur: 7, priority: 'Standard' },
   { id: 'ORD-2001', route: 'R02', loc: 'T Nagar', boxes: 3, dur: 9, priority: 'High' },
-  { id: 'ORD-2002', route: 'R02', loc: 'Nungambakkam', boxes: 2, dur: 8, priority: 'High' },
-  { id: 'ORD-2003', route: 'R02', loc: 'Kilpauk', boxes: 3, dur: 10, priority: 'High' },
   { id: 'ORD-3001', route: 'R03', loc: 'Adyar', boxes: 5, dur: 7, priority: 'Standard' },
-  { id: 'ORD-3002', route: 'R03', loc: 'Besant Nagar', boxes: 4, dur: 6, priority: 'Standard' },
-  { id: 'ORD-3003', route: 'R03', loc: 'Thiruvanmiyur', boxes: 5, dur: 8, priority: 'Standard' },
   { id: 'ORD-4001', route: 'R04', loc: 'Ambattur Estate', boxes: 6, dur: 12, priority: 'Critical' },
-  { id: 'ORD-4002', route: 'R04', loc: 'Porur', boxes: 5, dur: 11, priority: 'Critical' },
-  { id: 'ORD-4003', route: 'R04', loc: 'Vadapalani', boxes: 5, dur: 9, priority: 'Critical' },
   { id: 'ORD-5001', route: 'R05', loc: 'Tambaram', boxes: 3, dur: 7, priority: 'Standard' },
-  { id: 'ORD-5002', route: 'R05', loc: 'Chromepet', boxes: 3, dur: 6, priority: 'Standard' },
-  { id: 'ORD-6001', route: 'R06', loc: 'Anna Nagar', boxes: 4, dur: 8, priority: 'Critical' },
-  { id: 'ORD-6002', route: 'R06', loc: 'Kolathur', boxes: 4, dur: 9, priority: 'Critical' },
-  { id: 'ORD-6003', route: 'R06', loc: 'Villivakkam', boxes: 4, dur: 7, priority: 'Critical' },
 ]
+
+// ---------------------------------------------------------------------------
+// Adapters: backend VehicleModel/RouteModel/AssignmentModel -> the shape the
+// existing UI components already render (id/type/fuel/capacity/efficiency/
+// co2Factor for vehicles; id/area/distanceKm/demand/traffic/priority for
+// routes). Keeping this mapping at the App.jsx boundary means no downstream
+// component needs to change even though the real fields differ.
+// ---------------------------------------------------------------------------
+const CO2_FACTORS_BY_FUEL = {
+  Diesel: 2.68,
+  Petrol: 2.31,
+  Hybrid: 1.7325, // DEFRA petrol factor x0.75 powertrain efficiency
+  CNG: 1.95,
+  Electric: 0.45,
+  EV: 0.45,
+}
+
+function trafficLabel(trafficFactor) {
+  if (trafficFactor <= 1.12) return 'Low'
+  if (trafficFactor <= 1.22) return 'Medium'
+  return 'High'
+}
+
+function priorityLabel(priority) {
+  if (priority <= 1) return 'Standard'
+  if (priority === 2) return 'High'
+  return 'Critical'
+}
+
+function mapVehicle(v) {
+  return {
+    id: v.vehicle_id,
+    driver: `Driver ${(v.vehicle_id.match(/\d+/) || ['000'])[0]}`,
+    type: v.vehicle_type,
+    fuel: v.fuel_type,
+    capacity: v.max_payload_kg,
+    efficiency: v.fuel_efficiency_kmpl || 10,
+    co2Factor: CO2_FACTORS_BY_FUEL[v.fuel_type] || 2.5,
+    availableNormally: v.available,
+  }
+}
+
+function mapRoute(r) {
+  return {
+    id: r.route_id,
+    area: r.destination || r.origin,
+    distanceKm: r.distance_km,
+    demand: r.required_payload_kg,
+    traffic: trafficLabel(r.traffic_factor),
+    priority: priorityLabel(r.priority),
+  }
+}
+
+function mapAssignments(list = []) {
+  const map = {}
+  const details = {}
+  list.forEach((a) => {
+    if (!map[a.vehicle_id]) map[a.vehicle_id] = []
+    map[a.vehicle_id].push(a.route_id)
+    details[`${a.vehicle_id}:${a.route_id}`] = {
+      fuelL: a.predicted_fuel_l || 0,
+      co2Kg: a.estimated_co2_kg || 0,
+      costINR: a.operating_cost || 0,
+    }
+  })
+  return { map, details }
+}
+
+// Backend has no sub-stop/order model — synthesize a couple of display-only
+// stops per route so the Orders sub-tab still has something to show.
+function deriveOrders(routes) {
+  const orders = []
+  routes.forEach((r) => {
+    const stopCount = 2 + (r.id.charCodeAt(r.id.length - 1) % 2)
+    for (let i = 1; i <= stopCount; i++) {
+      orders.push({
+        id: `ORD-${r.id}-${i}`,
+        route: r.id,
+        loc: `${r.area} Stop ${i}`,
+        boxes: Math.max(1, Math.round(r.demand / (stopCount * 50))),
+        dur: 6 + i * 2,
+        priority: r.priority,
+      })
+    }
+  })
+  return orders
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('plan')
@@ -61,14 +136,16 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState(null)
   const [selectedVehicleId, setSelectedVehicleId] = useState(null)
   const [selectedRouteId, setSelectedRouteId] = useState(null)
+  const [backendConnected, setBackendConnected] = useState(false)
 
-  const [vehicles, setVehicles] = useState(VEHICLES_INIT)
-  const [orders, setOrders] = useState(ORDERS_INIT)
+  const [vehicles, setVehicles] = useState(FALLBACK_VEHICLES)
+  const [routes, setRoutes] = useState(FALLBACK_ROUTES)
+  const [orders, setOrders] = useState(FALLBACK_ORDERS)
   const [assignment, setAssignment] = useState({})
   const [baselineAssignment, setBaselineAssignment] = useState({})
+  const [assignmentDetails, setAssignmentDetails] = useState({})
+  const [carbonBudget, setCarbonBudget] = useState(null)
   const [solverLogs, setSolverLogs] = useState([])
-
-  const currentRoutes = scenario === 'peak' ? [...ROUTES_BASE, ROUTE_SURGE] : ROUTES_BASE
 
   // Show Toast popup helper
   const showToast = useCallback((msg) => {
@@ -78,53 +155,97 @@ export default function App() {
     }, 2800)
   }, [])
 
-  // Baseline Calculation
-  const computeBaseline = useCallback(() => {
-    const routes = scenario === 'peak' ? [...ROUTES_BASE, ROUTE_SURGE] : ROUTES_BASE
-    const base = {}
-    VEHICLES_INIT.forEach((v) => { base[v.id] = [] })
+  // Applies a full SimulationStateResponse from the backend to local state.
+  const applyStateResponse = useCallback((response) => {
+    const mappedVehicles = (response.vehicles || []).map(mapVehicle)
+    const mappedRoutes = (response.routes || []).map(mapRoute)
+    const base = mapAssignments(response.baseline_assignments)
+    const opt = mapAssignments(response.greenflow_assignments)
+    const activeMap = response.greenflow_assignments && response.greenflow_assignments.length
+      ? opt.map
+      : base.map
 
+    setVehicles(mappedVehicles)
+    setRoutes(mappedRoutes)
+    setOrders(deriveOrders(mappedRoutes))
+    setBaselineAssignment(base.map)
+    setAssignment(activeMap)
+    setAssignmentDetails({ ...base.details, ...opt.details })
+    setIsOptimized(Boolean(response.greenflow_assignments && response.greenflow_assignments.length))
+    if (response.scenario) {
+      setScenario(response.scenario === 'peak_demand' ? 'peak' : (response.scenario === 'high_traffic' ? 'traffic' : 'normal'))
+    }
+    if (response.carbon_budget) setCarbonBudget(response.carbon_budget)
+    setBackendConnected(true)
+  }, [])
+
+  // Local (offline) baseline fallback — only used if the backend is unreachable.
+  const computeLocalFallback = useCallback(() => {
+    const base = {}
+    FALLBACK_VEHICLES.forEach((v) => { base[v.id] = [] })
     const used = new Set()
-    routes.forEach((r) => {
-      const candidate = VEHICLES_INIT.find(
-        (v) => (v.id !== 'V005' || scenario !== 'peak') && !used.has(v.id)
-      )
+    FALLBACK_ROUTES.forEach((r) => {
+      const candidate = FALLBACK_VEHICLES.find((v) => !used.has(v.id))
       if (candidate) {
         base[candidate.id].push(r.id)
         used.add(candidate.id)
       }
     })
-
+    setVehicles(FALLBACK_VEHICLES)
+    setRoutes(FALLBACK_ROUTES)
+    setOrders(FALLBACK_ORDERS)
     setBaselineAssignment(base)
     setAssignment(base)
+    setAssignmentDetails({})
     setIsOptimized(false)
-  }, [scenario])
+    setBackendConnected(false)
+  }, [])
 
+  // Fetch real backend state on mount.
   useEffect(() => {
-    computeBaseline()
-  }, [computeBaseline])
+    let cancelled = false
+    api.getSimulationState()
+      .then((response) => {
+        if (!cancelled) applyStateResponse(response)
+      })
+      .catch((err) => {
+        console.error('[App] Backend unreachable, using offline fallback:', err.message)
+        if (!cancelled) {
+          computeLocalFallback()
+          showToast('Backend unreachable — showing offline demo data')
+        }
+      })
+    return () => { cancelled = true }
+  }, [applyStateResponse, computeLocalFallback, showToast])
 
-  // Compute KPIs
+  // Compute KPIs — prefers the backend's precomputed per-assignment fuel/CO2/
+  // cost (which already reflects risk-adjusted fuel and the dynamic carbon
+  // penalty) and only falls back to a local estimate when unavailable.
   const computeKPIs = (assignMap) => {
     let fuelL = 0, co2Kg = 0, costINR = 0, inefficientTrips = 0, assignedCount = 0
-    const routes = currentRoutes
 
-    VEHICLES_INIT.forEach((v) => {
+    vehicles.forEach((v) => {
       const rids = assignMap[v.id] || []
       rids.forEach((rid) => {
         const r = routes.find((x) => x.id === rid)
         if (!r) return
-        const litres = r.distanceKm / v.efficiency
-        fuelL += litres
-        co2Kg += litres * v.co2Factor
-        costINR += litres * 94 + r.distanceKm * 8
+        const detail = assignmentDetails[`${v.id}:${rid}`]
+        if (detail) {
+          fuelL += detail.fuelL
+          co2Kg += detail.co2Kg
+          costINR += detail.costINR
+        } else {
+          const litres = r.distanceKm / v.efficiency
+          fuelL += litres
+          co2Kg += litres * v.co2Factor
+          costINR += litres * 94 + r.distanceKm * 8
+        }
         assignedCount += 1
         if (v.capacity < r.demand) inefficientTrips += 1
       })
     })
 
-    const capacitySlots = VEHICLES_INIT.length * (scenario === 'peak' ? 2 : 1)
-    const utilisationPct = Math.min(100, (assignedCount / capacitySlots) * 100)
+    const utilisationPct = Math.min(100, (assignedCount / Math.max(1, vehicles.length)) * 100)
 
     return { fuelL, co2Kg, costINR, utilisationPct, inefficientTrips }
   }
@@ -142,68 +263,83 @@ export default function App() {
     setIsRunning(true)
     setSolverLogs([
       'Formulating QUBO cost matrix (fuel + CO₂ + distance + penalty)…',
-      'Running simulated annealing quantum-inspired search (600 iterations)…',
+      'Running simulated annealing quantum-inspired search…',
       'Verifying capacity and availability constraints…',
       'Optimal route assignment achieved.',
     ])
 
     try {
-      // Attempt backend optimization call if reachable
-      const response = await api.optimizeRoutes('simulated_annealing', { scenario })
-      if (response && response.assignments) {
-        const newAssign = {}
-        VEHICLES_INIT.forEach((v) => { newAssign[v.id] = [] })
-        response.assignments.forEach((a) => {
-          if (newAssign[a.vehicle_id]) {
-            newAssign[a.vehicle_id].push(a.route_id)
-          }
-        })
-        setAssignment(newAssign)
-      } else {
-        throw new Error('No assignments in backend response')
-      }
-    } catch {
-      // Deterministic optimized assignment fallback
-      setTimeout(() => {
-        const optimized = {}
-        VEHICLES_INIT.forEach((v) => { optimized[v.id] = [] })
-
-        if (scenario === 'peak') {
-          optimized['V001'] = ['R01']
-          optimized['V002'] = ['R02']
-          optimized['V003'] = ['R03', 'R05']
-          optimized['V004'] = ['R04', 'R06']
-          optimized['V005'] = [] // Breakdown
-        } else {
-          optimized['V001'] = ['R01']
-          optimized['V002'] = ['R02']
-          optimized['V003'] = ['R03']
-          optimized['V004'] = ['R04']
-          optimized['V005'] = ['R05']
-        }
-
-        setAssignment(optimized)
-      }, 700)
+      const response = await api.runOptimization()
+      applyStateResponse(response)
+      showToast('Plan updated — routes re-optimised')
+    } catch (err) {
+      console.error('[App] Optimization request failed:', err.message)
+      showToast('Optimization failed — check backend connection')
     } finally {
-      setTimeout(() => {
-        setIsRunning(false)
-        setIsOptimized(true)
-        showToast('Plan updated — routes re-optimised')
-      }, 750)
+      setIsRunning(false)
     }
   }
 
-  const handleSimulatePeak = () => {
-    setScenario('peak')
-    setIsOptimized(false)
-    showToast('Peak demand simulated — 1 route surge, 1 vehicle down')
+  const handleSimulatePeak = async () => {
+    try {
+      const response = await api.simulatePeak()
+      applyStateResponse(response)
+      showToast('Peak demand simulated — route surge, reduced availability')
+    } catch (err) {
+      console.error('[App] simulatePeak failed:', err.message)
+      showToast('Could not reach backend to simulate peak demand')
+    }
   }
 
-  const handleReset = () => {
-    setScenario('normal')
-    setIsLocked(false)
-    computeBaseline()
-    showToast('Simulation reset to normal baseline demand')
+  const handleReset = async () => {
+    try {
+      setIsLocked(false)
+      const response = await api.resetSimulation()
+      applyStateResponse(response)
+      showToast('Simulation reset to normal baseline demand')
+    } catch (err) {
+      console.error('[App] resetSimulation failed:', err.message)
+      showToast('Could not reach backend to reset simulation')
+    }
+  }
+
+  // Logs a real (bad) driving-behavior telemetry sample for a vehicle, then
+  // re-runs the optimizer so the assignment visibly reacts to it.
+  const handleSimulateHarshEvent = async (vehicleId, driverLabel) => {
+    try {
+      await api.logTelemetry(vehicleId, { brake_freq: 16, gear_irregularity: 75, harsh_accel: 6 })
+      showToast(`Harsh driving event logged for ${driverLabel} — re-optimising routes`)
+      const response = await api.runOptimization()
+      applyStateResponse(response)
+    } catch (err) {
+      console.error('[App] handleSimulateHarshEvent failed:', err.message)
+      showToast(`Could not log telemetry: ${err.message}`)
+    }
+  }
+
+  // Logs a good driving-behavior sample, clearing the vehicle's bad rolling
+  // score, then re-optimizes so it can be routed normally again.
+  const handleClearHarshEvent = async (vehicleId, driverLabel) => {
+    try {
+      for (let i = 0; i < 5; i++) {
+        await api.logTelemetry(vehicleId, { brake_freq: 1, gear_irregularity: 2, harsh_accel: 0 })
+      }
+      showToast(`${driverLabel} restored to normal monitoring — re-optimising routes`)
+      const response = await api.runOptimization()
+      applyStateResponse(response)
+    } catch (err) {
+      console.error('[App] handleClearHarshEvent failed:', err.message)
+      showToast(`Could not clear telemetry: ${err.message}`)
+    }
+  }
+
+  const refreshState = async () => {
+    try {
+      const response = await api.getSimulationState()
+      applyStateResponse(response)
+    } catch (err) {
+      console.error('[App] refreshState failed:', err.message)
+    }
   }
 
   return (
@@ -240,9 +376,9 @@ export default function App() {
               onSimulatePeak={handleSimulatePeak}
               onReset={handleReset}
               onImportOrders={() => showToast('Imported 17 orders for 22-08-2026')}
-              onShareRoutes={() => showToast('Route links broadcast to driver portals')}
+              onShareRoutes={() => showToast('Route links broadcast to drivers')}
               onRefresh={() => {
-                computeBaseline()
+                refreshState()
                 showToast('Plan refreshed')
               }}
               onToggleLock={() => {
@@ -265,7 +401,7 @@ export default function App() {
             {activeSubtab === 'routes' && (
               <RoutesSubpanel
                 vehicles={vehicles}
-                routes={currentRoutes}
+                routes={routes}
                 assignment={assignment}
                 baselineAssignment={baselineAssignment}
                 isOptimized={isOptimized}
@@ -296,14 +432,16 @@ export default function App() {
           </main>
         )}
 
-        {/* TAB 2: Live Tracking & Driver Portal */}
+        {/* TAB 2: Live Tracking */}
         {activeTab === 'live' && (
           <LiveTab
             vehicles={vehicles}
-            routes={currentRoutes}
+            routes={routes}
             assignment={assignment}
             orders={orders}
             onShowToast={showToast}
+            onSimulateHarshEvent={handleSimulateHarshEvent}
+            onClearHarshEvent={handleClearHarshEvent}
           />
         )}
 
@@ -312,17 +450,26 @@ export default function App() {
           <AnalyticsTab
             activeCategory={analyticsCategory}
             vehicles={vehicles}
-            routes={currentRoutes}
+            routes={routes}
             assignment={assignment}
           />
         )}
 
         {/* TAB 4: Settings */}
-        {activeTab === 'settings' && <SettingsTab />}
+        {activeTab === 'settings' && (
+          <SettingsTab
+            carbonBudget={carbonBudget}
+            onShowToast={showToast}
+            onVehicleRegistered={refreshState}
+          />
+        )}
 
         {/* Global Footer */}
         <footer className="footer">
-          <span>GreenFlow AI · Full-Featured Driver Efficiency &amp; Route Optimization Platform</span>
+          <span>
+            GreenFlow AI · Full-Featured Driver Efficiency &amp; Route Optimization Platform
+            {!backendConnected && ' · OFFLINE DEMO DATA'}
+          </span>
           <span className="footer-endpoints">
             Endpoints: /api/fleet · /api/predict/batch · /api/predict/telemetry · /api/predict/range · /api/simulate/state
           </span>
