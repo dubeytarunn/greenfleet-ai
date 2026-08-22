@@ -14,6 +14,8 @@ export default function RoutesSubpanel({
   selectedRouteId = null,
   onSelectVehicle,
   onSelectRoute,
+  onOpenWhy,
+  recommendation = null,
 }) {
   const [vehicleFilter, setVehicleFilter] = useState('all')
 
@@ -166,7 +168,44 @@ export default function RoutesSubpanel({
         </div>
       </section>
 
-      {/* 2. Workspace 3-Column Layout */}
+      {/* 2. Dispatcher Action Recommendation Banner */}
+      {recommendation && (
+        <section className="recommendation-banner" aria-label="Dispatcher action recommendation">
+          <div className="rec-header">
+            <div className="rec-badge-group">
+              <span className="rec-title">DISPATCHER ACTION RECOMMENDATION</span>
+              <span className={`rec-badge rec-badge-${(recommendation.urgency_level || 'info').toLowerCase()}`}>
+                {recommendation.status_badge}
+              </span>
+            </div>
+            <p className="rec-diagnosis">{recommendation.problem_diagnosis}</p>
+          </div>
+          <div className="rec-body">
+            <div className="rec-action-box">
+              <span className="rec-action-label">RECOMMENDED DISPATCH ACTION</span>
+              <p className="rec-action-text">{recommendation.recommended_action}</p>
+            </div>
+            {recommendation.expected_impact && (
+              <div className="rec-impact-grid">
+                <div className="rec-chip">
+                  <span className="rec-chip-label">CO₂ Avoided</span>
+                  <span className="rec-chip-val text-green">{recommendation.expected_impact.co2_avoided}</span>
+                </div>
+                <div className="rec-chip">
+                  <span className="rec-chip-label">Fuel Saved</span>
+                  <span className="rec-chip-val text-blue">{recommendation.expected_impact.fuel_saved}</span>
+                </div>
+                <div className="rec-chip">
+                  <span className="rec-chip-label">Direct Saving</span>
+                  <span className="rec-chip-val text-amber">{recommendation.expected_impact.direct_fuel_saving}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* 3. Workspace 3-Column Layout */}
       <div className="workspace">
         {/* Column 1: Fleet Inventory Table */}
         <section className="panel panel-fleet" aria-label="Fleet inventory">
@@ -196,6 +235,7 @@ export default function RoutesSubpanel({
                     <th>Distance</th>
                     <th># Stops</th>
                     <th>Load</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,6 +266,21 @@ export default function RoutesSubpanel({
                             ? `${assignedRoutes.length} trips`
                             : (assignedRoutes.length ? `${Math.round(((routes.find(r => r.id === assignedRoutes[0])?.demand || 0) / v.capacity) * 100)}%` : '—')}
                         </td>
+                        <td>
+                          {assignedRoutes.length > 0 && onOpenWhy && (
+                            <button
+                              type="button"
+                              className="btn-why"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onOpenWhy(v.id)
+                              }}
+                              title="Why was this vehicle selected? (Explainability & Risk)"
+                            >
+                              Why?
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     )
                   })}
@@ -237,7 +292,18 @@ export default function RoutesSubpanel({
           <div className="panel-foot">
             {selectedVehicle ? (
               <div className="detail-card">
-                <span className="detail-title">{selectedVehicle.driver} · {selectedVehicle.id}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="detail-title">{selectedVehicle.driver} · {selectedVehicle.id}</span>
+                  {(assignment[selectedVehicle.id] || []).length > 0 && onOpenWhy && (
+                    <button
+                      type="button"
+                      className="btn-why"
+                      onClick={() => onOpenWhy(selectedVehicle.id)}
+                    >
+                      Why?
+                    </button>
+                  )}
+                </div>
                 <div className="detail-grid">
                   <div className="detail-item">Type<b>{selectedVehicle.type}</b></div>
                   <div className="detail-item">Fuel<b>{selectedVehicle.fuel}</b></div>
@@ -260,6 +326,7 @@ export default function RoutesSubpanel({
             ) : (
               <p className="detail-empty">Select a vehicle or route above to inspect its full operational profile.</p>
             )}
+
           </div>
         </section>
 
