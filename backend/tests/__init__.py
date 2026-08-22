@@ -1,3 +1,0 @@
-"""
-GreenFlow AI - Test Suite
-"""
