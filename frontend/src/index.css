@@ -1,6 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-@import "tailwindcss";
-
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500;600&display=swap');
 
 :root {
   --bg-void: #F5F7FA;
@@ -56,18 +54,23 @@
 html, body {
   margin: 0;
   padding: 0;
-  background-color: #020617;
-  color: #f8fafc;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
 
-#root {
-  min-height: 100vh;
-  background-color: #020617;
-}
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.005em; color: var(--geotab-blue); }
+p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+button { font-family: var(--font-body); cursor: pointer; }
+code { font-family: var(--font-mono); }
 
+:focus-visible {
+  outline: 2px solid var(--action-primary);
+  outline-offset: 2px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
