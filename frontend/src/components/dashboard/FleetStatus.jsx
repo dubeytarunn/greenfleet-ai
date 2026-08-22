@@ -284,7 +284,60 @@ export default function FleetStatus({
                   </p>
                 </div>
 
-                {/* 5-Factor Score Radar / Grid */}
+                {/* 1. Fuel Prediction & Conformal Risk Card */}
+                {explanationData.target && (
+                  <div className="rounded-lg bg-slate-900/90 border border-cyan-500/30 p-3.5 space-y-2.5 shadow-md">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5 font-mono">
+                        <Fuel className="h-3.5 w-3.5 text-cyan-400" />
+                        Fuel Prediction & Risk Analysis
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
+                        (explanationData.risk_context?.target_risk_level === 'HIGH' || (explanationData.target.uncertainty_pct || 0) > 25)
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : (explanationData.risk_context?.target_risk_level === 'MODERATE' || (explanationData.target.uncertainty_pct || 0) > 15)
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      }`}>
+                        ● {explanationData.risk_context?.target_risk_level || 'LOW'} RISK
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="bg-slate-950/70 p-2 rounded border border-slate-800/80">
+                        <div className="text-[10px] text-slate-400">Expected Fuel</div>
+                        <div className="text-sm font-bold text-white mt-0.5">
+                          {explanationData.target.predicted_fuel_l?.toFixed(1)} L
+                        </div>
+                      </div>
+                      <div className="bg-slate-950/70 p-2 rounded border border-slate-800/80">
+                        <div className="text-[10px] text-slate-400">90% Conformal Prediction Interval</div>
+                        <div className="text-sm font-bold text-cyan-300 mt-0.5">
+                          {explanationData.target.fuel_lower_l?.toFixed(1)} – {explanationData.target.fuel_upper_l?.toFixed(1)} L
+                        </div>
+                      </div>
+                      <div className="bg-slate-950/70 p-2 rounded border border-slate-800/80">
+                        <div className="text-[10px] text-slate-400">Risk Aversion Parameter (λ)</div>
+                        <div className="text-sm font-bold text-slate-200 mt-0.5">
+                          λ = {explanationData.risk_context?.risk_aversion_lambda ?? 0.5}
+                        </div>
+                      </div>
+                      <div className="bg-slate-950/70 p-2 rounded border border-slate-800/80">
+                        <div className="text-[10px] text-slate-400">Risk-Adjusted Fuel (QUBO)</div>
+                        <div className="text-sm font-bold text-amber-300 mt-0.5">
+                          {explanationData.target.risk_adjusted_fuel_l?.toFixed(1)} L
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-slate-400 bg-slate-950/50 p-2 rounded border border-slate-800/60 leading-relaxed font-sans">
+                      <span className="text-cyan-300 font-semibold font-mono">Note: </span>
+                      Direct CO₂ ({explanationData.target.estimated_co2_kg?.toFixed(1)} kg) is calculated from expected physical fuel ({explanationData.target.predicted_fuel_l?.toFixed(1)} L). QUBO optimization penalizes prediction uncertainty ({explanationData.target.risk_adjusted_fuel_l?.toFixed(1)} L at λ={explanationData.risk_context?.risk_aversion_lambda ?? 0.5}).
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. 5-Factor Score Radar / Grid */}
                 <div className="rounded-lg bg-slate-900/80 border border-slate-800 p-3">
                   <div className="text-[11px] font-semibold text-slate-300 mb-2 flex items-center justify-between">
                     <span>5-Factor Suitability Scoring</span>
@@ -292,6 +345,7 @@ export default function FleetStatus({
                       {explanationData.target.overall_suitability_score.toFixed(1)} / 100
                     </span>
                   </div>
+
                   <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
                     <div className="bg-slate-950/60 p-1.5 rounded border border-slate-800/80">
                       <span className="text-slate-400">Fuel Efficiency:</span>{' '}
