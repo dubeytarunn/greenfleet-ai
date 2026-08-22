@@ -179,3 +179,17 @@ def configure_carbon_budget(payload: SetCarbonBudgetRequest):
     return simulation_engine.set_carbon_budget(payload.budget_kg)
 
 
+@router.get("/explanation/{vehicle_id}", summary="Get deterministic 5-factor explanation and counterfactual for vehicle assignment")
+@router.get("/explain/{vehicle_id}", summary="Get deterministic 5-factor explanation and counterfactual for vehicle assignment")
+def get_assignment_explanation(vehicle_id: str):
+    """
+    Returns an auditable, deterministic 5-factor explanation, best feasible alternative
+    comparison, carbon budget governor context, and counterfactual sensitivity insights for a vehicle's assignment.
+    """
+    try:
+        return simulation_engine.get_assignment_explanation(vehicle_id)
+    except ValueError as ex:
+        raise HTTPException(status_code=404, detail=str(ex))
+
+
+
