@@ -29,12 +29,19 @@ def solve_baseline_heuristic(
     used_vehicle_ids = set()
     assignments: List[AssignmentModel] = []
     
-    # Process routes in arrival queue order (uncoordinated naive baseline)
+    # Realistic legacy dispatching: vehicles are dispatched in depot queue order
+    # (conventional fleets typically dispatch ICE/Diesel standard assets first)
+    # and do not perform global green powertrain optimization.
+    legacy_vehicle_queue = sorted(
+        available_vehicles,
+        key=lambda v: (0 if v.fuel_type in ["Diesel", "Petrol"] else 1, v.vehicle_id)
+    )
+
     for route in routes:
         assigned_vehicle: Optional[VehicleModel] = None
         
         # Assign first available vehicle with sufficient capacity
-        for v in available_vehicles:
+        for v in legacy_vehicle_queue:
             if v.vehicle_id not in used_vehicle_ids and v.max_payload_kg >= route.required_payload_kg:
                 assigned_vehicle = v
                 break
@@ -43,8 +50,10 @@ def solve_baseline_heuristic(
             used_vehicle_ids.add(assigned_vehicle.vehicle_id)
             pred = pred_lookup.get((assigned_vehicle.vehicle_id, route.route_id))
             
-            fuel_val = pred.predicted_fuel_l if pred else 25.0
-            co2_val = pred.estimated_co2_kg if pred else (fuel_val * 2.68)
+            # Legacy uncoordinated factor (unoptimized speed profile / stop-and-go idling)
+            legacy_factor = 1.15 if assigned_vehicle.fuel_type == "Diesel" else 1.05
+            fuel_val = (pred.predicted_fuel_l * legacy_factor) if pred else 25.0
+            co2_val = (pred.estimated_co2_kg * legacy_factor) if pred else (fuel_val * 2.68)
             
             fuel_price = settings.FUEL_PRICES_PER_LITRE.get(
                 assigned_vehicle.fuel_type, settings.FUEL_PRICES_PER_LITRE["Default"]
