@@ -24,12 +24,12 @@ EMISSION_FACTORS_KG_CO2_PER_UNIT: Dict[str, float] = {
 # Configurable economic assumptions for fleet cost waste calculations
 # ---------------------------------------------------------------------------
 FUEL_PRICES_INR_PER_UNIT: Dict[str, float] = {
-    "Diesel": 89.50,    # ₹ / Litre
-    "Petrol": 102.50,   # ₹ / Litre
-    "Hybrid": 102.50,   # ₹ / Litre (petrol blend)
-    "CNG": 78.00,       # ₹ / kg
+    "Diesel": 95.00,    # ₹ / Litre (canonical operational baseline)
+    "Petrol": 102.00,   # ₹ / Litre
+    "Hybrid": 102.00,   # ₹ / Litre (petrol blend)
+    "CNG": 85.00,       # ₹ / kg
     "Electric": 9.00,   # ₹ / kWh
-    "Default": 90.00,   # ₹ / Litre
+    "Default": 95.00,   # ₹ / Litre
 }
 
 # ---------------------------------------------------------------------------

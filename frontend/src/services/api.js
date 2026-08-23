@@ -164,6 +164,20 @@ export async function getTelemetryScore(vehicleId) {
 }
 
 /**
+ * Analyze real-time vehicle telemetry stream using Model 2 (telemetry_fuel_model.pkl).
+ * Evaluates driver inefficiency, fuel waste, excess CO2, and remaining range.
+ */
+export async function analyzeTelemetry(window, fuelPriceInr) {
+  const body = { window }
+  if (fuelPriceInr !== undefined) body.fuel_price_inr = fuelPriceInr
+  return request('/api/predict/telemetry', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+
+/**
  * Fetch all demand delivery routes.
  */
 export async function getRoutes(params = {}) {
@@ -277,11 +291,13 @@ export default {
   registerVehicle,
   logTelemetry,
   getTelemetryScore,
+  analyzeTelemetry,
   getRoutes,
   getScoring,
   getPrediction,
   optimize,
 }
+
 
 
 

@@ -92,9 +92,13 @@ def estimate_fuel_waste(
 
     expected_lph = max(0.1, float(expected_metrics.get("expected_fuel_rate_lph", 1.0)))
 
-    # Compute actual fuel rate from telemetry
-    actual_lph_list = [float(r.get("fuel_rate_lph", expected_lph)) for r in records]
+    # Compute actual fuel rate from telemetry (fallback to expected if unspecified or None)
+    actual_lph_list = [
+        float(r["fuel_rate_lph"]) if r.get("fuel_rate_lph") is not None else expected_lph
+        for r in records
+    ]
     actual_lph = float(np.mean(actual_lph_list))
+
 
     # Calculate deviation %
     deviation_pct = calculate_fuel_deviation_pct(actual_lph, expected_lph)

@@ -17,23 +17,30 @@ class Settings(BaseSettings):
     # Deterministic simulation seed
     RANDOM_SEED: int = 42
     
-    # DEFRA / UK Gov GHG Standard Conversion Factors (kg CO2 per litre of fuel)
+    # DEFRA / UK Gov GHG Standard Conversion Factors (kg CO2 per litre / unit of fuel)
     EMISSION_FACTORS_KG_CO2_PER_LITRE: Dict[str, float] = {
         "Diesel": 2.68,
         "Petrol": 2.31,
-        "Hybrid": 2.31,
+        "Hybrid": 1.85,
         "CNG": 1.95,
+        "Electric": 0.45,
         "Default": 2.65,
     }
     
-    # Regional Fleet Fuel Pricing ($ per litre)
+    # Regional Fleet Fuel Pricing (INR ₹ per unit: L, kg, kWh)
     FUEL_PRICES_PER_LITRE: Dict[str, float] = {
-        "Diesel": 1.65,
-        "Petrol": 1.55,
-        "Hybrid": 1.55,
-        "CNG": 1.10,
-        "Default": 1.60,
+        "Diesel": 95.0,
+        "Petrol": 102.0,
+        "Hybrid": 102.0,
+        "CNG": 85.0,
+        "Electric": 9.0,
+        "Default": 95.0,
     }
+
+    # Internal Carbon Shadow Pricing & Governance Constants
+    CARBON_SHADOW_PRICE_INR_PER_TONNE: float = 2500.0   # ₹2.50 / kg CO2
+    DEFAULT_SHIFT_CARBON_BUDGET_KG: float = 1500.0      # 1,500 kg CO2 shift quota
+    DEFAULT_RISK_AVERSION_LAMBDA: float = 0.50          # Moderate risk aversion lambda
     
     # Baseline Operating Cost per KM ($/km by vehicle category)
     VEHICLE_TYPE_BASE_COST_PER_KM: Dict[str, float] = {

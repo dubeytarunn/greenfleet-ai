@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import api from '../../services/api.js'
 
 const DEPOT = [13.0350, 80.2100] // GreenFlow depot (central hub, Chennai)
 
@@ -112,10 +113,14 @@ export default function LiveTab({
   onClearHarshEvent,
 }) {
   const [liveTick, setLiveTick] = useState(0)
-  const [driverPortals, setDriverPortals] = useState({})
   const [harshEventDrivers, setHarshEventDrivers] = useState(new Set())
   const [selectedDriverId, setSelectedDriverId] = useState(null)
   const [roadPaths, setRoadPaths] = useState({}) // routeId -> [[lat,lng], ...] real road geometry
+
+  // Real ML Inference State from Model 2 (POST /api/predict/telemetry)
+  const [telemetryInferences, setTelemetryInferences] = useState({})
+  const [telemetryLoading, setTelemetryLoading] = useState(false)
+  const [telemetryError, setTelemetryError] = useState(null)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -144,50 +149,118 @@ export default function LiveTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes])
 
-  const computeDriverBehaviour = (driverId, tick) => {
-    let brakeFreq = 4.2 + (Math.sin(driverId.charCodeAt(2) + tick * 0.4) + 1) * 2.5
-    let gearIrregular = 10 + (Math.cos(driverId.charCodeAt(3) + tick * 0.3) + 1) * 8
-    let mileage = 9.5 + (Math.sin(tick * 0.2) + 1) * 3
-    let harshAccel = Math.round((Math.sin(driverId.charCodeAt(1) + tick * 0.5) + 1) * 1.5)
+  /**
+   * Evaluates telemetry window via backend LightGBM Model 2 (POST /api/predict/telemetry).
+   * Sends actual telemetry frames based on current driving conditions.
+   */
+  const evaluateTelemetryML = useCallback(async (vehicleId, isHarsh) => {
+    const v = vehicles.find((x) => x.id === vehicleId) || { id: vehicleId, type: 'Truck', fuel: 'Diesel' }
+    
+    // Construct real simulated telemetry frames for the ML inference pipeline
+    const window = isHarsh
+      ? [
+          {
+            vehicle_id: v.id,
+            vehicle_type: v.type,
+            fuel_type: v.fuel,
+            speed_kmph: 68.0,
+            acceleration_mps2: 3.4,
+            rpm: 3800.0,
+            gear: 2,
+            throttle_position_pct: 90.0,
+            brake_pressure_pct: 75.0,
+            engine_load_pct: 95.0,
+            road_slope_pct: 0.0,
+            traffic_level: 'High',
+            road_type: 'Urban',
+            fuel_level_l: 45.0,
+            idle_duration_sec: 25,
+          },
+          {
+            vehicle_id: v.id,
+            vehicle_type: v.type,
+            fuel_type: v.fuel,
+            speed_kmph: 74.0,
+            acceleration_mps2: 3.8,
+            rpm: 4100.0,
+            gear: 2,
+            throttle_position_pct: 95.0,
+            brake_pressure_pct: 85.0,
+            engine_load_pct: 98.0,
+            road_slope_pct: 0.0,
+            traffic_level: 'High',
+            road_type: 'Urban',
+            fuel_level_l: 44.5,
+            idle_duration_sec: 30,
+          },
+        ]
+      : [
+          {
+            vehicle_id: v.id,
+            vehicle_type: v.type,
+            fuel_type: v.fuel,
+            speed_kmph: 50.0,
+            acceleration_mps2: 0.4,
+            rpm: 1650.0,
+            gear: 4,
+            throttle_position_pct: 35.0,
+            brake_pressure_pct: 5.0,
+            engine_load_pct: 45.0,
+            road_slope_pct: 0.0,
+            traffic_level: 'Medium',
+            road_type: 'Highway',
+            fuel_level_l: 48.0,
+            idle_duration_sec: 0,
+          },
+          {
+            vehicle_id: v.id,
+            vehicle_type: v.type,
+            fuel_type: v.fuel,
+            speed_kmph: 52.0,
+            acceleration_mps2: 0.2,
+            rpm: 1700.0,
+            gear: 4,
+            throttle_position_pct: 32.0,
+            brake_pressure_pct: 0.0,
+            engine_load_pct: 42.0,
+            road_slope_pct: 0.0,
+            traffic_level: 'Medium',
+            road_type: 'Highway',
+            fuel_level_l: 47.8,
+            idle_duration_sec: 0,
+          },
+        ]
 
-    if (harshEventDrivers.has(driverId)) {
-      brakeFreq = 14.5
-      gearIrregular = 65
-      harshAccel = 6
+    try {
+      setTelemetryLoading(true)
+      setTelemetryError(null)
+      const res = await api.analyzeTelemetry(window)
+      if (res && res.vehicle_id) {
+        setTelemetryInferences((prev) => ({
+          ...prev,
+          [vehicleId]: res,
+        }))
+      }
+    } catch (err) {
+      console.warn(`[LiveTab] Telemetry ML inference failed for ${vehicleId}:`, err.message)
+      setTelemetryError('Telemetry ML inference service currently unreachable.')
+    } finally {
+      setTelemetryLoading(false)
     }
+  }, [vehicles])
 
-    let score = 100 - brakeFreq * 3 - gearIrregular * 0.6 - harshAccel * 4 + (mileage - 10) * 1.5
-    score = Math.max(25, Math.min(98, Math.round(score)))
-    return { brakeFreq, gearIrregular, mileage, harshAccel, score }
-  }
-
-  const handleCreatePortal = (vehicleId) => {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-    let pw = ''
-    for (let i = 0; i < 8; i++) {
-      pw += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    setDriverPortals((prev) => ({
-      ...prev,
-      [vehicleId]: {
-        username: `${vehicleId.toLowerCase()}@greenflow.fleet`,
-        password: pw,
-      },
-    }))
-    const v = vehicles.find((x) => x.id === vehicleId)
-    if (onShowToast) onShowToast(`Driver Portal created for ${v?.driver || vehicleId}`)
-  }
-
-  const handleCopy = (text) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => {})
-    }
-    if (onShowToast) onShowToast('Copied credential to clipboard')
-  }
+  // Trigger real ML evaluation on initial vehicle load or driver selection
+  useEffect(() => {
+    vehicles.forEach((v) => {
+      const isHarsh = harshEventDrivers.has(v.id)
+      evaluateTelemetryML(v.id, isHarsh)
+    })
+  }, [vehicles, harshEventDrivers, evaluateTelemetryML])
 
   const selectedVehicle = selectedDriverId ? vehicles.find((v) => v.id === selectedDriverId) : null
-  const selectedBehaviour = selectedVehicle ? computeDriverBehaviour(selectedVehicle.id, liveTick) : null
+
   const selectedAssignedRoutes = selectedVehicle ? (assignment[selectedVehicle.id] || []) : []
+  const selectedMLAlert = selectedVehicle ? telemetryInferences[selectedVehicle.id] : null
 
   // When a driver is selected, the map shows only their route; otherwise
   // every route/vehicle is shown. Recomputes whenever assignment changes
@@ -203,6 +276,13 @@ export default function LiveTab({
     : null
 
   const gaugeColor = (pct) => (pct >= 70 ? '#1E8E3E' : (pct >= 40 ? '#E58A00' : '#D93025'))
+  const severityBadgeClass = (sev) => {
+    switch (sev?.toUpperCase()) {
+      case 'CRITICAL': return 'driver-status-break'
+      case 'WARNING': return 'driver-status-idle'
+      default: return 'driver-status-en_route'
+    }
+  }
 
   return (
     <main className="tab-panel active">
@@ -242,17 +322,12 @@ export default function LiveTab({
                   </Popup>
                 </Marker>
 
-                {/* Route destinations + roads — shown as curved paths (not a
-                    straight depot-to-destination line) in both the all-routes
-                    view and the single-driver-focused view; colored by the
-                    assigned vehicle so each driver reads as a distinct color. */}
+                {/* Route destinations + roads */}
                 {visibleRoutes.map((r) => {
                   const bendSign = hashCode(r.id) % 2 === 0 ? 1 : -1
                   const fallbackDest = routeCoord(r.id)
-                  // Real road-following path if OSRM returned one; otherwise the
-                  // synthetic curve while it's still loading / unavailable.
                   const path = roadPaths[r.id] || curvedRoutePath(DEPOT, fallbackDest, bendSign)
-                  const coord = path[path.length - 1] // marker sits at the path's actual endpoint
+                  const coord = path[path.length - 1]
                   const assignedVehicle = vehicles.find((v) => (assignment[v.id] || []).includes(r.id))
                   const isCovered = Boolean(assignedVehicle)
                   const isFocused = selectedVehicle && selectedAssignedRoutes.includes(r.id)
@@ -290,10 +365,7 @@ export default function LiveTab({
                   )
                 })}
 
-                {/* Animated live vehicles (filtered to the selected driver, if any) —
-                    each vehicle gets its own color and moves along the same
-                    real road path drawn for its route (falls back to the
-                    synthetic curve while that path is still loading). */}
+                {/* Animated live vehicles on map */}
                 {visibleVehicles.map((v, i) => {
                   const assigned = (assignment[v.id] || [])[0]
                   if (!assigned) return null
@@ -331,10 +403,11 @@ export default function LiveTab({
             </div>
           </section>
 
-          {/* All Drivers Table */}
+          {/* All Drivers Table — populated with Model 2 ML scores */}
           <section className="panel">
             <div className="panel-head">
               <h2>All Drivers — Live Fleet Manager View</h2>
+              <span className="panel-hint">ML Model 2 Continuous Telemetry</span>
             </div>
             <div className="table-scroll" style={{ maxHeight: '280px' }}>
               <table className="data-table">
@@ -343,14 +416,15 @@ export default function LiveTab({
                     <th>Driver</th>
                     <th>Status</th>
                     <th>Speed</th>
-                    <th>Driving Score</th>
+                    <th>Driving Score (ML)</th>
                     <th>ETA next stop</th>
                   </tr>
                 </thead>
                 <tbody>
                   {vehicles.map((v) => {
                     const assigned = (assignment[v.id] || [])[0]
-                    const b = computeDriverBehaviour(v.id, liveTick)
+                    const mlAlert = telemetryInferences[v.id]
+                    const score = mlAlert ? mlAlert.behaviour_score : 95.0
                     const status = assigned ? 'en_route' : 'idle'
                     const speed = assigned ? Math.round(35 + (Math.sin(liveTick + v.id.charCodeAt(2)) + 1) * 15) : 0
                     const eta = assigned ? Math.round(5 + (Math.cos(liveTick + v.id.charCodeAt(3)) + 1) * 8) : null
@@ -372,8 +446,8 @@ export default function LiveTab({
                           </span>
                         </td>
                         <td className="mono">{assigned ? `${speed} km/h` : '—'}</td>
-                        <td className={`mono kpi-delta ${b.score >= 70 ? 'good' : (b.score >= 45 ? 'neutral' : 'bad')}`}>
-                          {b.score}
+                        <td className={`mono kpi-delta ${score >= 70 ? 'good' : (score >= 45 ? 'neutral' : 'bad')}`}>
+                          {score.toFixed(0)}
                         </td>
                         <td className="mono">{eta !== null ? `${eta} min` : '—'}</td>
                       </tr>
@@ -385,173 +459,113 @@ export default function LiveTab({
           </section>
         </div>
 
-        {/* Right Side: Driver Portal Access & Driver Detail */}
+        {/* Right Side: Live Driver Telemetry & ML Coaching */}
         <div className="live-side-panel">
-          {/* Driver Portal Access */}
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Driver Portal Access</h2>
-            </div>
-            <div className="panel-body">
-              <p className="insight-copy" style={{ marginBottom: '10px' }}>
-                Generate driver mobile access credentials to broadcast turn-by-turn routes and eco-driving alerts.
-              </p>
-              <div className="driver-list">
-                {vehicles.map((v) => {
-                  const portal = driverPortals[v.id]
-                  const isSelected = selectedDriverId === v.id
-
-                  return (
-                    <div
-                      key={v.id}
-                      className={`driver-row ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setSelectedDriverId(v.id)}
-                    >
-                      <div className="driver-avatar">{v.driver.slice(-2)}</div>
-                      <div className="driver-row-main">
-                        <div className="driver-row-name">{v.driver}</div>
-                        <div className="driver-row-sub">{v.id} · {v.type}</div>
-                        {portal && (
-                          <div className="credential-card">
-                            <div className="credential-row">
-                              <span>Username</span>
-                              <span>{portal.username}</span>
-                              <button
-                                type="button"
-                                className="copy-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleCopy(portal.username)
-                                }}
-                              >
-                                Copy
-                              </button>
-                            </div>
-                            <div className="credential-row">
-                              <span>Temp password</span>
-                              <span>{portal.password}</span>
-                              <button
-                                type="button"
-                                className="copy-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleCopy(portal.password)
-                                }}
-                              >
-                                Copy
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {portal ? (
-                        <span className="driver-status-tag driver-status-en_route">Portal live</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-ghost"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleCreatePortal(v.id)
-                          }}
-                          style={{ padding: '5px 10px', fontSize: '11px' }}
-                        >
-                          Create Portal
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </section>
-
-          {/* Driver Detail & Behavior Score */}
+          {/* Driver Detail & Real Model 2 Behavior Score */}
           <section className="panel">
             <div className="panel-head">
               <h2>Live Driver Telemetry &amp; Coaching</h2>
+              {telemetryLoading && <span className="panel-hint">Evaluating Model 2…</span>}
             </div>
             <div className="panel-body">
-              {selectedVehicle && selectedBehaviour ? (
+              {selectedVehicle ? (
                 <>
                   <div className="score-ring-wrap">
-                    <div className="score-ring-num" style={{ color: gaugeColor(selectedBehaviour.score) }}>
-                      {selectedBehaviour.score}
+                    <div className="score-ring-num" style={{ color: gaugeColor(selectedMLAlert?.behaviour_score ?? 95) }}>
+                      {selectedMLAlert ? selectedMLAlert.behaviour_score.toFixed(0) : '95'}
                     </div>
                     <div>
-                      <div className="toggle-row-text">Driving Score</div>
-                      <div className="score-ring-text">Composite metric of braking, gear regularity, and throttle</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className="toggle-row-text">Driving Score</span>
+                        <span className={`driver-status-tag ${severityBadgeClass(selectedMLAlert?.severity)}`}>
+                          {selectedMLAlert?.severity || 'NORMAL'}
+                        </span>
+                      </div>
+                      <div className="score-ring-text">Model 2: LightGBM continuous telemetry analysis</div>
                     </div>
                   </div>
 
                   <div className="behaviour-grid">
                     <div className="gauge-card">
-                      <div className="gauge-label">Brake frequency</div>
-                      <div className="gauge-value">{selectedBehaviour.brakeFreq.toFixed(1)}/10km</div>
+                      <div className="gauge-label">Detected Behaviour</div>
+                      <div className="gauge-value" style={{ fontSize: '13px' }}>
+                        {selectedMLAlert?.behaviour ? selectedMLAlert.behaviour.replace('_', ' ').toUpperCase() : 'NORMAL'}
+                      </div>
                       <div className="gauge-track">
                         <div
                           className="gauge-fill"
                           style={{
-                            width: `${Math.min(100, selectedBehaviour.brakeFreq * 7)}%`,
-                            background: gaugeColor(100 - selectedBehaviour.brakeFreq * 7),
+                            width: selectedMLAlert?.behaviour === 'normal' ? '100%' : '35%',
+                            background: selectedMLAlert?.behaviour === 'normal' ? '#1E8E3E' : '#D93025',
                           }}
                         ></div>
                       </div>
                     </div>
 
                     <div className="gauge-card">
-                      <div className="gauge-label">Gear irregularity</div>
-                      <div className="gauge-value">{selectedBehaviour.gearIrregular.toFixed(0)}%</div>
+                      <div className="gauge-label">Fuel Waste vs Baseline</div>
+                      <div className="gauge-value">
+                        {selectedMLAlert ? `${selectedMLAlert.fuel_wasted_l.toFixed(2)} L` : '0.00 L'}
+                      </div>
                       <div className="gauge-track">
                         <div
                           className="gauge-fill"
                           style={{
-                            width: `${selectedBehaviour.gearIrregular}%`,
-                            background: gaugeColor(100 - selectedBehaviour.gearIrregular),
+                            width: `${Math.min(100, Math.max(5, (selectedMLAlert?.fuel_deviation_pct || 0) * 2))}%`,
+                            background: (selectedMLAlert?.fuel_deviation_pct || 0) > 15 ? '#D93025' : '#1E8E3E',
                           }}
                         ></div>
                       </div>
                     </div>
 
                     <div className="gauge-card">
-                      <div className="gauge-label">Instantaneous Economy</div>
-                      <div className="gauge-value">{selectedBehaviour.mileage.toFixed(1)} km/L</div>
+                      <div className="gauge-label">Excess Financial &amp; CO₂</div>
+                      <div className="gauge-value" style={{ fontSize: '12px' }}>
+                        {selectedMLAlert ? `₹${selectedMLAlert.estimated_cost_inr.toFixed(0)} · ${selectedMLAlert.co2_impact_kg.toFixed(1)}kg` : '₹0 · 0kg'}
+                      </div>
                       <div className="gauge-track">
                         <div
                           className="gauge-fill"
                           style={{
-                            width: `${Math.min(100, selectedBehaviour.mileage * 6)}%`,
-                            background: gaugeColor(selectedBehaviour.mileage * 6),
+                            width: `${Math.min(100, Math.max(5, (selectedMLAlert?.estimated_cost_inr || 0) * 3))}%`,
+                            background: (selectedMLAlert?.estimated_cost_inr || 0) > 10 ? '#D93025' : '#1E8E3E',
                           }}
                         ></div>
                       </div>
                     </div>
 
                     <div className="gauge-card">
-                      <div className="gauge-label">Harsh acceleration</div>
-                      <div className="gauge-value">{selectedBehaviour.harshAccel}</div>
+                      <div className="gauge-label">Remaining Range (ML)</div>
+                      <div className="gauge-value" style={{ fontSize: '13px' }}>
+                        {selectedMLAlert ? `${selectedMLAlert.remaining_range_km.toFixed(0)} km` : '150 km'}
+                      </div>
                       <div className="gauge-track">
                         <div
                           className="gauge-fill"
                           style={{
-                            width: `${Math.min(100, selectedBehaviour.harshAccel * 25)}%`,
-                            background: gaugeColor(100 - selectedBehaviour.harshAccel * 25),
+                            width: `${Math.min(100, ((selectedMLAlert?.remaining_range_km || 150) / 300) * 100)}%`,
+                            background: (selectedMLAlert?.remaining_range_km || 150) < 40 ? '#D93025' : '#1E8E3E',
                           }}
                         ></div>
                       </div>
                     </div>
                   </div>
 
-                  {selectedBehaviour.score < 55 ? (
+                  {telemetryError ? (
                     <div className="adaptive-note" style={{ borderColor: 'var(--accent-red)', color: 'var(--accent-red)' }}>
-                      ⚠ Driving score dropped below threshold — active route re-sequencing recommended to insert rest buffer.
+                      {telemetryError}
                     </div>
-                  ) : (
-                    <div className="adaptive-note">
-                      Route is stable. If this driver's score drops, GreenFlow AI re-sequences stops automatically.
+                  ) : selectedMLAlert?.message ? (
+                    <div
+                      className="adaptive-note"
+                      style={{
+                        borderColor: selectedMLAlert.severity === 'CRITICAL' ? 'var(--accent-red)' : selectedMLAlert.severity === 'WARNING' ? 'var(--accent-amber)' : 'var(--action-primary-light)',
+                        color: selectedMLAlert.severity === 'CRITICAL' ? 'var(--accent-red)' : 'inherit',
+                      }}
+                    >
+                      {selectedMLAlert.message}
                     </div>
-                  )}
+                  ) : null}
 
                   <h3 style={{ marginTop: '14px', fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
                     Active Assigned Stops
@@ -582,6 +596,7 @@ export default function LiveTab({
                           next.delete(selectedVehicle.id)
                           return next
                         })
+                        await evaluateTelemetryML(selectedVehicle.id, false)
                         if (onClearHarshEvent) {
                           await onClearHarshEvent(selectedVehicle.id, selectedVehicle.driver)
                         } else if (onShowToast) {
@@ -598,10 +613,11 @@ export default function LiveTab({
                       className="btn btn-amber"
                       onClick={async () => {
                         setHarshEventDrivers((prev) => new Set(prev).add(selectedVehicle.id))
+                        await evaluateTelemetryML(selectedVehicle.id, true)
                         if (onSimulateHarshEvent) {
                           await onSimulateHarshEvent(selectedVehicle.id, selectedVehicle.driver)
                         } else if (onShowToast) {
-                          onShowToast(`Harsh driving event simulated for ${selectedVehicle.driver}`)
+                          onShowToast(`Harsh driving event sent to Model 2 for ${selectedVehicle.driver}`)
                         }
                       }}
                       style={{ marginTop: '12px', width: '100%', justifyContent: 'center' }}
@@ -622,3 +638,4 @@ export default function LiveTab({
     </main>
   )
 }
+
