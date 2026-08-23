@@ -12,10 +12,10 @@ from .simulation import ScenarioType, CarbonBudgetStatus
 
 class FuelPricingConfig(BaseModel):
     """Configurable regional fuel price assumptions (in INR ₹)."""
-    diesel_price_per_l: float = Field(default=94.0, description="Diesel price per litre in INR")
+    diesel_price_per_l: float = Field(default=95.0, description="Diesel price per litre in INR")
     petrol_price_per_l: float = Field(default=102.0, description="Petrol price per litre in INR")
     cng_price_per_kg: float = Field(default=85.0, description="CNG price per kg in INR")
-    electric_price_per_kwh: float = Field(default=8.5, description="Electricity price per kWh in INR")
+    electric_price_per_kwh: float = Field(default=9.0, description="Electricity price per kWh in INR")
     default_price_per_l: float = Field(default=95.0, description="Default fallback price per litre in INR")
 
     def get_price_for_fuel(self, fuel_type: str) -> float:
@@ -86,7 +86,7 @@ class WhatIfRequest(BaseModel):
     carbon_budget_kg: float = Field(default=1500.0, ge=500.0, le=5000.0, description="Target shift carbon budget quota in kg")
     traffic_factor_multiplier: float = Field(default=1.0, ge=0.5, le=2.5, description="Traffic congestion multiplier")
     risk_aversion_lambda: float = Field(default=0.5, ge=0.0, le=2.0, description="Dispatcher prediction risk aversion")
-    diesel_price_per_l: float = Field(default=94.0, ge=50.0, le=200.0, description="Assumed diesel price in INR/L")
+    diesel_price_per_l: float = Field(default=95.0, ge=50.0, le=200.0, description="Assumed diesel price in INR/L")
 
 
 class WhatIfProjection(BaseModel):

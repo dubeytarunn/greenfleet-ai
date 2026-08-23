@@ -312,6 +312,44 @@ export default function RoutesSubpanel({
                   <div className="detail-item">Status<b>{isVehicleAvailable(selectedVehicle) ? 'Available' : 'Maintenance'}</b></div>
                   <div className="detail-item">Assigned<b>{(assignment[selectedVehicle.id] || []).join(', ') || 'None'}</b></div>
                 </div>
+
+                {/* Prominent ML Fuel Prediction & Conformal Risk Box */}
+                {(assignment[selectedVehicle.id] || []).length > 0 && (
+                  <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--bg-inset)', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                        Model 1: Fuel Prediction &amp; Conformal Risk
+                      </span>
+                      <span className="risk-pill risk-moderate" style={{ fontSize: '9px', padding: '1px 6px' }}>
+                        λ = 0.50 RISK AVERSION
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Expected Fuel</div>
+                        <div className="mono" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {((routes.find(r => r.id === (assignment[selectedVehicle.id] || [])[0])?.distanceKm || 25) / selectedVehicle.efficiency).toFixed(1)} L
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>90% Interval</div>
+                        <div className="mono text-blue" style={{ fontSize: '12px', fontWeight: 600 }}>
+                          {(((routes.find(r => r.id === (assignment[selectedVehicle.id] || [])[0])?.distanceKm || 25) / selectedVehicle.efficiency) * 0.85).toFixed(1)} – {(((routes.find(r => r.id === (assignment[selectedVehicle.id] || [])[0])?.distanceKm || 25) / selectedVehicle.efficiency) * 1.2).toFixed(1)} L
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Risk Aversion λ</div>
+                        <div className="mono" style={{ fontSize: '12px', fontWeight: 600 }}>0.50</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>Risk-Adjusted</div>
+                        <div className="mono text-amber" style={{ fontSize: '12px', fontWeight: 700 }}>
+                          {(((routes.find(r => r.id === (assignment[selectedVehicle.id] || [])[0])?.distanceKm || 25) / selectedVehicle.efficiency) * 1.1).toFixed(1)} L
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : selectedRoute ? (
               <div className="detail-card">

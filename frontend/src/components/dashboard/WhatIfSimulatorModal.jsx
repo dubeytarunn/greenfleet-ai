@@ -6,7 +6,7 @@ export default function WhatIfSimulatorModal({ isOpen, onClose }) {
   const [budgetKg, setBudgetKg] = useState(1500)
   const [trafficFactor, setTrafficFactor] = useState(1.0)
   const [riskLambda, setRiskLambda] = useState(0.5)
-  const [dieselPrice, setDieselPrice] = useState(94)
+  const [dieselPrice, setDieselPrice] = useState(95)
 
   const [loading, setLoading] = useState(false)
   const [projection, setProjection] = useState(null)
