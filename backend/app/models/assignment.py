@@ -68,6 +68,8 @@ class OptimizationConfigModel(BaseModel):
     min_temp: float = Field(default=1e-3, description="Annealing minimum temperature")
     max_iterations: int = Field(default=20000, description="Maximum solver iterations")
     seed: Optional[int] = Field(default=42, description="Random seed for reproducibility")
+    carbon_budget_kg: Optional[float] = Field(default=None, description="Total CO2 budget (kg) enforced as a hard constraint when enforce_carbon_hard_cap is true")
+    enforce_carbon_hard_cap: bool = Field(default=False, description="If true, the optimizer must not return a solution whose total assigned CO2 exceeds carbon_budget_kg")
 
 
 

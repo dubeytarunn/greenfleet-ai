@@ -151,6 +151,8 @@ class OptimizationConfig:
     min_temp: float = 1e-3
     max_iterations: int = 20_000
     seed: Optional[int] = None
+    carbon_budget_kg: Optional[float] = None    # total CO2 budget (kg), used only if enforce_carbon_hard_cap
+    enforce_carbon_hard_cap: bool = False        # if True, total assigned CO2 must not exceed carbon_budget_kg
 
 
 
@@ -205,6 +207,7 @@ class QuantumInspiredOptimizer:
         }
 
         self.cost_matrix = self._build_cost_matrix()
+        self.co2_matrix = self._build_co2_matrix()
 
     # ---- cost matrix ------------------------------------------------
 
@@ -250,6 +253,22 @@ class QuantumInspiredOptimizer:
                     ) * r.priority
         return cost
 
+    def _build_co2_matrix(self) -> np.ndarray:
+        """Raw estimated_co2_kg per (vehicle, route) cell, 0 for infeasible cells
+        (unavailable vehicle / missing prediction / capacity shortfall) — used only
+        for the optional carbon hard-cap constraint, kept separate from cost_matrix
+        because that one blends CO2 with fuel/distance/priority weighting."""
+        co2 = np.zeros((self.n, self.m))
+        for i, v in enumerate(self.vehicles):
+            if not v.available:
+                continue
+            for j, r in enumerate(self.routes):
+                if v.max_payload_kg < r.required_payload_kg:
+                    continue
+                pred = self._prediction_lookup.get((v.vehicle_id, r.route_id))
+                if pred is not None:
+                    co2[i, j] = pred.estimated_co2_kg
+        return co2
 
     # ---- shared cost/penalty evaluation ------------------------------
 
@@ -295,6 +314,12 @@ class QuantumInspiredOptimizer:
                         self.config.capacity_shortfall_penalty * (r.required_payload_kg - v.max_payload_kg)
                     )
 
+        if self.config.enforce_carbon_hard_cap and self.config.carbon_budget_kg is not None:
+            total_co2 = float(np.sum(matrix * self.co2_matrix))
+            if total_co2 > self.config.carbon_budget_kg:
+                violations += 1
+                penalty += self.config.constraint_penalty * (total_co2 - self.config.carbon_budget_kg)
+
         return penalty, violations
 
     def _evaluate(self, matrix: np.ndarray) -> Dict[str, float]:
@@ -333,31 +358,57 @@ class QuantumInspiredOptimizer:
         return matrix
 
     def _neighbor(self, matrix: np.ndarray) -> np.ndarray:
-        """Move: swap two route assignments or reassign one route to an available vehicle."""
+        """Move: swap two route assignments, reassign one route to an available
+        vehicle, or drop/add a route's assignment entirely.
+
+        The drop/add moves exist so SA can actually reach a partial-coverage
+        solution — without them, every reachable state has every route
+        assigned to exactly one vehicle, which makes a hard carbon-budget cap
+        tighter than the cheapest full-coverage total unsatisfiable no matter
+        how many iterations run (a structural search-space gap, not a tuning
+        one). They're always available, not just when a cap is configured,
+        since "leave a route unassigned" is already a legal, scored state."""
         new_matrix = matrix.copy()
         used = [i for i in range(self.n) if new_matrix[i, :].sum() > 0]
         unused_avail = [i for i in self._available_idx if i not in used]
+        assigned_routes = [j for j in range(self.m) if new_matrix[:, j].sum() > 0]
+        unassigned_routes = [j for j in range(self.m) if new_matrix[:, j].sum() == 0]
 
-        if self.m >= 2 and (not unused_avail or random.random() < 0.5):
-            # Swap move between two routes
-            j1, j2 = random.sample(range(self.m), 2)
+        roll = random.random()
+
+        if roll < 0.15 and assigned_routes:
+            # Drop move: unassign one currently-covered route.
+            j = random.choice(assigned_routes)
+            new_matrix[:, j] = 0
+        elif roll < 0.30 and unassigned_routes and (unused_avail or self._available_idx):
+            # Add move: assign a currently-unassigned route to an available vehicle.
+            j = random.choice(unassigned_routes)
+            r = self.routes[j]
+            cand = [i for i in unused_avail if self.vehicles[i].max_payload_kg >= r.required_payload_kg]
+            if not cand:
+                cand = unused_avail if unused_avail else self._available_idx
+            i = random.choice(cand)
+            new_matrix[i, j] = 1
+        elif self.m >= 2 and len(assigned_routes) >= 2 and (not unused_avail or roll < 0.65):
+            # Swap move between two currently-assigned routes.
+            j1, j2 = random.sample(assigned_routes, 2)
             i1 = int(np.argmax(new_matrix[:, j1]))
             i2 = int(np.argmax(new_matrix[:, j2]))
             new_matrix[i1, j1] = 0
             new_matrix[i2, j2] = 0
             new_matrix[i2, j1] = 1
             new_matrix[i1, j2] = 1
-        else:
-            # Reassign move
-            j = random.randrange(self.m)
+        elif assigned_routes:
+            # Reassign move: move one currently-assigned route to a different vehicle.
+            j = random.choice(assigned_routes)
             r = self.routes[j]
-            # Prefer available vehicles meeting capacity
             cand = [i for i in unused_avail if self.vehicles[i].max_payload_kg >= r.required_payload_kg]
             if not cand:
                 cand = unused_avail if unused_avail else self._available_idx
             new_matrix[:, j] = 0
             i = random.choice(cand)
             new_matrix[i, j] = 1
+        # else: no legal move found (e.g. no routes assigned at all) — return unchanged.
         return new_matrix
 
     def solve_simulated_annealing(self) -> AssignmentResult:
@@ -432,6 +483,12 @@ class QuantumInspiredOptimizer:
             for j, r in enumerate(self.routes):
                 if v.max_payload_kg < r.required_payload_kg:
                     prob += x[i, j] == 0
+
+        # optional hard carbon budget constraint: total assigned CO2 must not exceed budget
+        if self.config.enforce_carbon_hard_cap and self.config.carbon_budget_kg is not None:
+            prob += pulp.lpSum(
+                x[i, j] * self.co2_matrix[i, j] for i in range(self.n) for j in range(self.m)
+            ) <= self.config.carbon_budget_kg
 
         # Use COIN_CMD (preferred) with fallback to PULP_CBC_CMD for older installs.
         # If the CBC binary is not installed (PulpSolverError), fall back to Hungarian
@@ -561,10 +618,17 @@ class QuantumInspiredOptimizer:
         # "sane bounds": cost shouldn't be anywhere near the hard-penalty magnitude
         checks["cost_in_sane_bounds"] = bool(result.total_cost < self.config.constraint_penalty)
 
+        total_co2 = float(np.sum(matrix * self.co2_matrix))
+        if self.config.enforce_carbon_hard_cap and self.config.carbon_budget_kg is not None:
+            checks["within_carbon_budget"] = bool(total_co2 <= self.config.carbon_budget_kg + 1e-6)
+        else:
+            checks["within_carbon_budget"] = True  # no hard cap configured, nothing to violate
+
         checks["all_constraints_satisfied"] = bool(
             checks["no_double_booking"]
             and checks["no_unavailable_vehicles_used"]
             and checks["no_capacity_violations"]
+            and checks["within_carbon_budget"]
         )
 
         # A partial assignment (fewer vehicles than routes) is acceptable —
@@ -575,6 +639,7 @@ class QuantumInspiredOptimizer:
             and checks["no_double_booking"]
             and checks["no_unavailable_vehicles_used"]
             and checks["no_capacity_violations"]
+            and checks["within_carbon_budget"]
             and checks["no_nan_or_negative_cost"]
         )
 
@@ -584,6 +649,8 @@ class QuantumInspiredOptimizer:
             "vehicles_double_booked": double_booked,
             "unavailable_vehicles_used": unavailable_used,
             "capacity_violations": capacity_violations,
+            "total_co2_kg": round(total_co2, 2),
+            "carbon_budget_kg": self.config.carbon_budget_kg,
         }
         return checks
 

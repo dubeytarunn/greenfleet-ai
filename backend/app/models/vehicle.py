@@ -11,7 +11,7 @@ class VehicleModel(BaseModel):
     Vehicle representation adhering strictly to Person 3 & ML team contracts.
     """
     vehicle_id: str = Field(..., description="Unique vehicle identifier (e.g. V001)")
-    vehicle_type: str = Field(..., description="Vehicle category (e.g. Truck, Van, Light Commercial, Semi-Trailer)")
+    vehicle_type: str = Field(..., description="Vehicle category (Standard, Van, Commercial Truck, Hazmat truck, Semi-Trailer)")
     fuel_type: str = Field(..., description="Fuel type (e.g. Diesel, Petrol, Hybrid, CNG)")
     vehicle_age: int = Field(..., ge=0, description="Age of vehicle in years")
     fuel_capacity_l: float = Field(..., gt=0, description="Fuel tank capacity in litres")

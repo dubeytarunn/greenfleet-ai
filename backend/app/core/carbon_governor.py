@@ -55,6 +55,7 @@ class CarbonBudgetState(BaseModel):
     status: CarbonBudgetStatus = Field(default=CarbonBudgetStatus.HEALTHY, description="Operational carbon status")
     dynamic_co2_penalty: float = Field(default=1.0, description="Dynamic multiplier w_co2 for optimizer cost matrix")
     co2_avoided_kg: float = Field(default=0.0, description="CO2 saved vs uncoordinated baseline (kg)")
+    hard_cap_enabled: bool = Field(default=False, description="If true, the optimizer must not exceed budget_kg total assigned CO2, not just reweight cost")
 
 
 class CarbonBudgetGovernor:
@@ -76,6 +77,7 @@ class CarbonBudgetGovernor:
         self.consumed_kg: float = 0.0
         self.projected_kg: float = 0.0
         self.co2_avoided_kg: float = 0.0
+        self.hard_cap_enabled: bool = False
 
     def reset(self, budget_kg: Optional[float] = None) -> CarbonBudgetState:
         """Restores governor to initial baseline state."""
@@ -84,13 +86,17 @@ class CarbonBudgetGovernor:
         self.consumed_kg = 0.0
         self.projected_kg = 0.0
         self.co2_avoided_kg = 0.0
+        self.hard_cap_enabled = False
         return self.get_state()
 
-    def set_budget(self, budget_kg: float) -> None:
-        """Dynamically reconfigures the planning budget."""
+    def set_budget(self, budget_kg: float, hard_cap: Optional[bool] = None) -> None:
+        """Dynamically reconfigures the planning budget and, optionally, whether it's
+        enforced as a hard optimizer constraint rather than just a soft cost reweight."""
         if budget_kg <= 0:
             raise ValueError("Carbon budget must be strictly positive.")
         self.budget_kg = float(budget_kg)
+        if hard_cap is not None:
+            self.hard_cap_enabled = bool(hard_cap)
 
     @staticmethod
     def calculate_consumed(assignments: List[Any]) -> float:
@@ -209,6 +215,7 @@ class CarbonBudgetGovernor:
             status=status,
             dynamic_co2_penalty=dynamic_penalty,
             co2_avoided_kg=self.co2_avoided_kg,
+            hard_cap_enabled=self.hard_cap_enabled,
         )
 
 

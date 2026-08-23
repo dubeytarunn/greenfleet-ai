@@ -9,8 +9,10 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
+from . import behavior_registry
 from .config import settings
 from .optimizer import optimize_routes
+from .vehicle_profiles import get_vehicle_profile
 from .quantum_optimizer import (
     OptimizationConfig as CoreOptConfig,
     Prediction as CorePrediction,
@@ -39,6 +41,14 @@ except Exception as e:
     logger.warning(f"ml_engine import failed: {e}. Using physics-grounded fallback.")
     ML_AVAILABLE = False
 
+# vehicle_type categories the trained LightGBM model actually saw during
+# training (see ml_engine/generate_data.py). Any other type string (e.g. the
+# newer "Standard"/"Commercial Truck"/"Hazmat truck" categories) is unseen by
+# the model's categorical encoder and would silently collapse to an arbitrary
+# default — so those always go through the physics fallback instead, which
+# looks the type up in `vehicle_profiles` and differentiates it correctly.
+_ML_KNOWN_VEHICLE_TYPES = {"Van", "Light Commercial", "Truck", "Semi-Trailer", "Bus"}
+
 
 def _physics_fallback_prediction(
     vehicle: VehicleModel,
@@ -49,14 +59,9 @@ def _physics_fallback_prediction(
     High-fidelity physics-based fuel estimation fallback in case ML model is unavailable.
     Fuel (L) = (Base_Rate * Distance / 100) * Load_Factor * Traffic_Factor * Age_Factor
     """
-    base_l_per_100km = {
-        "Van": 10.5,
-        "Light Commercial": 16.0,
-        "Truck": 26.0,
-        "Semi-Trailer": 36.0,
-        "Bus": 28.0,
-    }.get(vehicle.vehicle_type, 22.0)
-    
+    profile = get_vehicle_profile(vehicle.vehicle_type)
+    base_l_per_100km = profile["base_l_per_100km"]
+
     # Powertrain adjustment
     if vehicle.fuel_type == "Hybrid":
         base_l_per_100km *= 0.75
@@ -109,23 +114,32 @@ def predict_fuel_and_co2(
     predictions: List[PredictionModel] = []
     
     for v in vehicles:
+        # Persisted driving-behavior score inflates fuel/CO2 proportionally
+        # for a badly-driven vehicle — applied uniformly regardless of
+        # whether the prediction came from the ML model or the physics
+        # fallback, so a poor driving pattern naturally pushes the optimizer
+        # toward reassigning this vehicle on the next run. Computed once per
+        # vehicle (not per vehicle-route pair) to avoid an O(N*M) DB hit.
+        behavior_multiplier = behavior_registry.get_behavior_multiplier(v.vehicle_id)
+
         for r in routes:
             trip_data: Optional[Dict[str, Any]] = None
-            
-            if ML_AVAILABLE:
+
+            if ML_AVAILABLE and v.vehicle_type in _ML_KNOWN_VEHICLE_TYPES:
                 try:
                     v_dict = v.model_dump()
                     r_dict = r.model_dump()
                     trip_data = predict_trip(v_dict, r_dict, risk_aversion_lambda=risk_aversion_lambda)
                 except Exception as ex:
                     logger.debug(f"ML inference fallback for ({v.vehicle_id}, {r.route_id}): {ex}")
-            
+
             if trip_data is None:
                 phys = _physics_fallback_prediction(v, r, risk_aversion_lambda=risk_aversion_lambda)
                 factor = settings.EMISSION_FACTORS_KG_CO2_PER_LITRE.get(
                     v.fuel_type, settings.EMISSION_FACTORS_KG_CO2_PER_LITRE["Default"]
                 )
-                co2_val = round(phys["predicted_fuel_l"] * factor, 1)
+                type_co2_factor = get_vehicle_profile(v.vehicle_type)["co2_emission_factor"]
+                co2_val = round(phys["predicted_fuel_l"] * factor * type_co2_factor, 1)
                 trip_data = {
                     "vehicle_id": v.vehicle_id,
                     "route_id": r.route_id,
@@ -138,7 +152,13 @@ def predict_fuel_and_co2(
                     "estimated_co2_kg": co2_val,
                     "confidence_level": 0.90,
                 }
-            
+
+            if behavior_multiplier != 1.0:
+                for key in ("predicted_fuel_l", "fuel_lower_l", "fuel_upper_l",
+                            "uncertainty_l", "risk_adjusted_fuel_l", "estimated_co2_kg"):
+                    if trip_data.get(key) is not None:
+                        trip_data[key] = round(trip_data[key] * behavior_multiplier, 2)
+
             predictions.append(
                 PredictionModel(
                     vehicle_id=v.vehicle_id,
@@ -230,6 +250,8 @@ def run_greenflow_optimizer(
             min_temp=config.min_temp,
             max_iterations=config.max_iterations,
             seed=config.seed,
+            carbon_budget_kg=config.carbon_budget_kg,
+            enforce_carbon_hard_cap=config.enforce_carbon_hard_cap,
         )
     
     t0 = time.perf_counter()

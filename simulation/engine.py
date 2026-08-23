@@ -50,6 +50,7 @@ from backend.app.models.simulation import (
     SimulationStateResponse,
 )
 from backend.app.models.vehicle import VehicleModel
+from backend.app.core import vehicle_registry
 from .baseline import solve_baseline_heuristic
 from .scenarios import generate_scenario
 
@@ -89,7 +90,8 @@ class SimulationEngine:
         """Restores the simulation to the deterministic Normal Fleet initial state."""
         with self._lock:
             self.scenario = ScenarioType.NORMAL
-            self.vehicles, self.routes = generate_scenario(ScenarioType.NORMAL)
+            _, self.routes = generate_scenario(ScenarioType.NORMAL)
+            self.vehicles = vehicle_registry.list_vehicles()
             self.predictions = predict_fuel_and_co2(self.vehicles, self.routes)
             
             # Compute baseline assignments
@@ -119,7 +121,8 @@ class SimulationEngine:
         """Applies a stress scenario (e.g. Peak Demand or High Traffic)."""
         with self._lock:
             self.scenario = scenario_type
-            self.vehicles, self.routes = generate_scenario(scenario_type)
+            _, self.routes = generate_scenario(scenario_type)
+            self.vehicles = vehicle_registry.list_vehicles()
             self.predictions = predict_fuel_and_co2(self.vehicles, self.routes)
             
             # Run baseline under new scenario
@@ -146,10 +149,10 @@ class SimulationEngine:
             
             return self._build_state_response()
 
-    def set_carbon_budget(self, budget_kg: float) -> SimulationStateResponse:
+    def set_carbon_budget(self, budget_kg: float, hard_cap: Optional[bool] = None) -> SimulationStateResponse:
         """Dynamically reconfigures the operational carbon budget and recalculates state."""
         with self._lock:
-            self.carbon_governor.set_budget(budget_kg)
+            self.carbon_governor.set_budget(budget_kg, hard_cap=hard_cap)
             # Recompute state with current active assignments
             active_assignments = self.greenflow_assignments if self.greenflow_assignments else self.baseline_assignments
             kpi = self._calculate_kpis(active_assignments, "Active Strategy")
@@ -178,7 +181,17 @@ class SimulationEngine:
             opt_config = config or OptimizationConfigModel()
             if config is None or config.co2_weight == 1.0:
                 opt_config.co2_weight = gov_state.dynamic_co2_penalty
-                
+            if gov_state.hard_cap_enabled:
+                opt_config.carbon_budget_kg = gov_state.budget_kg
+                opt_config.enforce_carbon_hard_cap = True
+
+            # Recompute predictions fresh (not the ones cached at reset/scenario
+            # time) so newly-logged driving-behavior telemetry actually shows
+            # up in this run's fuel/CO2 estimates before the optimizer sees them.
+            self.predictions = predict_fuel_and_co2(
+                self.vehicles, self.routes, risk_aversion_lambda=opt_config.risk_aversion_lambda
+            )
+
             # 2. Run optimization engine with dynamic carbon penalty
             opt_result = run_greenflow_optimizer(
                 vehicles=self.vehicles,

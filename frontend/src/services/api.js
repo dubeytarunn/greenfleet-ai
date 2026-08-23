@@ -99,12 +99,15 @@ export async function getCarbonBudget() {
 }
 
 /**
- * Reconfigure planning horizon carbon budget quota.
+ * Reconfigure planning horizon carbon budget quota, optionally enforcing it
+ * as a hard optimizer constraint rather than just a soft cost reweight.
  */
-export async function setCarbonBudget(budgetKg) {
+export async function setCarbonBudget(budgetKg, hardCap) {
+  const body = { budget_kg: budgetKg }
+  if (hardCap !== undefined) body.hard_cap = hardCap
   return request('/api/simulate/carbon-budget', {
     method: 'POST',
-    body: JSON.stringify({ budget_kg: budgetKg }),
+    body: JSON.stringify(body),
   })
 }
 
@@ -119,9 +122,45 @@ export async function getFleet(params = {}) {
   const query = new URLSearchParams()
   if (params.availableOnly !== undefined) query.append('available_only', params.availableOnly)
   if (params.vehicleType) query.append('vehicle_type', params.vehicleType)
-  
+
   const queryString = query.toString() ? `?${query.toString()}` : ''
   return request(`/api/fleet/vehicles${queryString}`)
+}
+
+/**
+ * Fetch engine/emission profile (combustion efficiency, CO2 factor, fuel
+ * multiplier) for each supported vehicle type.
+ */
+export async function getVehicleTypes() {
+  return request('/api/fleet/vehicle-types')
+}
+
+/**
+ * Register a new vehicle. Persisted server-side (SQLite) and immediately
+ * visible to subsequent optimize runs.
+ */
+export async function registerVehicle(vehicle) {
+  return request('/api/fleet/vehicles', {
+    method: 'POST',
+    body: JSON.stringify(vehicle),
+  })
+}
+
+/**
+ * Log one driving-behavior telemetry sample for a vehicle.
+ */
+export async function logTelemetry(vehicleId, sample) {
+  return request(`/api/telemetry/${vehicleId}`, {
+    method: 'POST',
+    body: JSON.stringify(sample),
+  })
+}
+
+/**
+ * Fetch a vehicle's current rolling driving-behavior score.
+ */
+export async function getTelemetryScore(vehicleId) {
+  return request(`/api/telemetry/${vehicleId}`)
 }
 
 /**
@@ -234,6 +273,10 @@ export default {
   simulateWhatIf,
   getScenarioMatrix,
   getFleet,
+  getVehicleTypes,
+  registerVehicle,
+  logTelemetry,
+  getTelemetryScore,
   getRoutes,
   getScoring,
   getPrediction,

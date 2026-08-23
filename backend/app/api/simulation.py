@@ -16,7 +16,8 @@ from backend.app.models.schemas import (
     Vehicle,
     Route,
 )
-from backend.app.api.fleet import _vehicles_store, _routes_store
+from backend.app.api.fleet import _routes_store, _model_to_schema
+from backend.app.core import vehicle_registry
 from backend.app.api.optimization import compute_assignments
 from simulation.dataset import get_initial_fleet, get_initial_routes
 from simulation.engine import simulation_engine
@@ -62,9 +63,11 @@ def run_simulation(request: SimulationRunRequest):
         modified_r.required_payload_kg = round(r.required_payload_kg * request.payload_multiplier, 2)
         scenario_routes.append(modified_r)
 
+    registered_vehicles = [_model_to_schema(v) for v in vehicle_registry.list_vehicles()]
+
     # 2. Optimized run using optimizer endpoint
     opt_req = OptimizeRequest(
-        vehicles=_vehicles_store,
+        vehicles=registered_vehicles,
         routes=scenario_routes,
         objective="balanced",
     )
@@ -85,7 +88,7 @@ def run_simulation(request: SimulationRunRequest):
     )
 
     # 3. True Uncoordinated / Baseline Heuristic Run
-    v_models = [VehicleModel(**v.model_dump()) for v in _vehicles_store]
+    v_models = vehicle_registry.list_vehicles()
     r_models = [RouteModel(**r.model_dump()) for r in scenario_routes]
     preds = predict_fuel_and_co2(v_models, r_models)
     
@@ -175,6 +178,7 @@ def get_simulation_state():
 
 class SetCarbonBudgetRequest(BaseModel):
     budget_kg: float = Field(..., gt=0, description="New planning horizon carbon budget in kg CO2")
+    hard_cap: Optional[bool] = Field(default=None, description="If true, budget_kg is enforced as a hard optimizer constraint, not just a soft cost reweight")
 
 
 @router.get("/carbon-budget", response_model=CarbonBudgetModel, summary="Get active Carbon Budget Governor telemetry")
@@ -186,7 +190,7 @@ def get_carbon_budget():
 @router.post("/carbon-budget", response_model=SimulationStateResponse, summary="Configure operational carbon budget")
 def configure_carbon_budget(payload: SetCarbonBudgetRequest):
     """Dynamically reconfigures the planning carbon budget and recalculates governor state."""
-    return simulation_engine.set_carbon_budget(payload.budget_kg)
+    return simulation_engine.set_carbon_budget(payload.budget_kg, hard_cap=payload.hard_cap)
 
 
 @router.get("/explanation/{vehicle_id}", summary="Get deterministic 5-factor explanation and counterfactual for vehicle assignment")
