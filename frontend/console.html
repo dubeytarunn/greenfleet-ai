@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GreenFlow AI — Fleet Optimisation Console</title>
+<style>
+/* =========================================================================
+   GreenFlow AI — Design tokens (Dark Charcoal Action Theme)
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-void: #F5F7FA;
+  --bg-panel: #FFFFFF;
+  --bg-panel-raised: #EFF2F7;
+  --bg-inset: #F7F9FB;
+  --line: #DDE3EC;
+  --line-soft: #E7EBF1;
+
+  --text-primary: #1F2A3C;
+  --text-secondary: #5B6B7F;
+  --text-tertiary: #8A96A6;
+
+  --geotab-blue: #25477B;
+  --geotab-dark-blue: #21325E;
+
+  /* Primary Action Color: Dark Charcoal / Black (#1C1C1E / #0B0B0C) */
+  --action-primary: #1C1C1E;
+  --action-primary-hover: #0B0B0C;
+  --action-primary-light: #3A3A3D;
+  --action-primary-soft: rgba(28, 28, 30, 0.10);
+
+  /* Status Accents */
+  --accent-green: #1E8E3E;
+  --accent-green-soft: rgba(30, 142, 62, 0.12);
+  --accent-amber: #E58A00;
+  --accent-amber-soft: rgba(229, 138, 0, 0.12);
+  --accent-indigo: #0078D3;
+  --accent-indigo-soft: rgba(0, 120, 211, 0.10);
+  --accent-red: #D93025;
+  --accent-red-soft: rgba(217, 48, 37, 0.10);
+
+  --sidebar-bg: #0B0B0C;
+  --sidebar-bg-raised: #1C1C1E;
+  --sidebar-text: #B7BAC0;
+  --sidebar-text-active: #FFFFFF;
+  --sidebar-active-bg: #1C1C1E;
+  --sidebar-active-accent: #4C8DFF;
+  --sidebar-border: rgba(255, 255, 255, 0.09);
+
+  --font-display: 'Roboto', 'Segoe UI', Arial, sans-serif;
+  --font-body: 'Roboto', 'Segoe UI', Arial, sans-serif;
+  --font-mono: 'Roboto Mono', 'SFMono-Regular', Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --shadow-panel: 0 1px 2px rgba(16,24,40,0.04), 0 4px 14px rgba(16,24,40,0.07);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.005em; color: var(--geotab-blue); }
+p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+button { font-family: var(--font-body); cursor: pointer; }
+code { font-family: var(--font-mono); }
+
+:focus-visible {
+  outline: 2px solid var(--action-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Buttons & Actions                                                      */
+/* ---------------------------------------------------------------------- */
+
+.btn {
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn:hover { transform: translateY(-1px); border-color: var(--text-tertiary); background: var(--bg-panel-raised); }
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.btn-ghost { background: var(--bg-panel); }
+.btn-amber { border-color: rgba(229,138,0,0.4); color: var(--accent-amber); background: var(--bg-panel); }
+.btn-amber:hover { background: var(--accent-amber-soft); border-color: var(--accent-amber); }
+
+/* Primary Action Button — Charcoal Black (#1C1C1E / #0B0B0C) */
+.btn-primary {
+  background: var(--action-primary);
+  border-color: var(--action-primary);
+  color: #FFFFFF;
+  font-weight: 700;
+}
+.btn-primary:hover {
+  background: var(--action-primary-hover);
+  border-color: var(--action-primary-hover);
+  color: #FFFFFF;
+}
+
+.btn-spinner {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #FFFFFF;
+  display: none;
+  animation: spin 0.7s linear infinite;
+}
+.btn-primary.is-running .btn-spinner { display: inline-block; }
+.btn-primary.is-running .btn-label::after { content: "…"; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------------------------------------------------------------------- */
+/* App Shell & Sidebar                                                    */
+/* ---------------------------------------------------------------------- */
+
+.app-shell {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 232px;
+  flex-shrink: 0;
+  min-height: 100vh;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 12px;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 8px 20px;
+}
+.sidebar-brand .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+.sidebar-brand .brand-name { color: #FFFFFF; }
+.sidebar-brand .brand-sub { color: var(--sidebar-text); }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.nav-group { display: flex; flex-direction: column; }
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px 10px 9px;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  text-align: left;
+}
+.sidebar-item svg { flex-shrink: 0; opacity: 0.85; }
+.sidebar-item span { flex: 1; }
+.sidebar-item .chevron { flex: none; opacity: 0.6; transition: transform 0.15s ease; }
+.sidebar-item:hover { color: #FFFFFF; background: var(--sidebar-bg-raised); }
+.sidebar-item.active {
+  color: var(--sidebar-active-accent);
+  background: transparent;
+  border-left-color: var(--sidebar-active-accent);
+  font-weight: 600;
+}
+.sidebar-item.active svg:not(.chevron) { opacity: 1; stroke: var(--sidebar-active-accent); }
+.sidebar-item.active .chevron { transform: rotate(180deg); stroke: var(--sidebar-active-accent); opacity: 1; }
+
+.nav-children {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px 18px;
+  padding-left: 14px;
+  border-left: 1px solid var(--sidebar-border);
+}
+.nav-children.collapsed { display: none; }
+.sidebar-child {
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: 12px;
+  font-weight: 400;
+  border-radius: var(--radius-sm);
+}
+.sidebar-child:hover { color: #FFFFFF; }
+.sidebar-child.active { color: var(--sidebar-active-accent); font-weight: 600; background: transparent; }
+
+.sidebar-footer { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--sidebar-border); }
+.sidebar-footer .status-pill { width: 100%; justify-content: flex-start; background: var(--sidebar-bg-raised); border-color: var(--sidebar-border); color: var(--sidebar-text); }
+.sidebar-footer .status-pill strong { color: #FFFFFF; }
+
+.main-area { flex: 1; min-width: 0; }
+.tab-panel { display: none; padding: 20px 24px 32px; max-width: 1600px; }
+.tab-panel.active { display: block; }
+
+/* ---------------------------------------------------------------------- */
+/* Plan & Optimize Toolbar                                                */
+/* ---------------------------------------------------------------------- */
+
+.po-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 16px;
+  flex-wrap: wrap;
+}
+.po-date-label { font-size: 12px; color: var(--text-secondary); }
+.po-date-input {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--line);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.po-toolbar-spacer { flex: 1; }
+.icon-btn-row { display: flex; gap: 6px; }
+.icon-btn {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--bg-panel-raised);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+.icon-btn:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
+.icon-btn.toggled { color: var(--accent-green); border-color: var(--accent-green); background: var(--accent-green-soft); }
+
+.subpanel { display: none; }
+.subpanel.active { display: block; }
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.toolbar-row .divider { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.search-input {
+  margin-left: auto;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--line);
+  color: var(--text-primary);
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  width: 200px;
+}
+.search-input::placeholder { color: var(--text-tertiary); }
+
+.toast {
+  position: fixed;
+  bottom: 22px; left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--action-primary);
+  border: 1px solid var(--action-primary-light);
+  color: #FFFFFF;
+  padding: 11px 18px;
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast::before { content: "✓"; color: var(--accent-green); font-weight: 700; }
+
+/* ---------------------------------------------------------------------- */
+/* Layout, Panels, Tables                                                 */
+/* ---------------------------------------------------------------------- */
+
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpi-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 13px 14px;
+  box-shadow: var(--shadow-panel);
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.kpi-value-row { display: flex; align-items: baseline; gap: 6px; }
+.kpi-value { font-family: var(--font-mono); font-size: 21px; font-weight: 600; }
+.kpi-unit { font-size: 11px; color: var(--text-secondary); }
+
+.kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+.kpi-delta.good { color: var(--accent-green); }
+.kpi-delta.bad { color: var(--accent-red); }
+.kpi-delta.neutral { color: var(--text-tertiary); }
+
+.kpi-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  margin-top: 10px;
+  overflow: hidden;
+}
+.kpi-bar-fill { height: 100%; background: var(--accent-green); border-radius: 2px; transition: width 0.5s ease; }
+
+.workspace {
+  display: grid;
+  grid-template-columns: 340px 1fr 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  gap: 10px;
+}
+.panel-head-tight { border-top: 1px solid var(--line-soft); margin-top: 4px; padding-top: 14px; }
+.panel-head h2 { font-size: 13.5px; font-weight: 600; }
+.panel-hint { font-size: 10.5px; color: var(--text-tertiary); }
+
+.panel-body { padding: 12px 14px 4px; flex: 1; }
+.panel-foot {
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 16px 16px;
+  min-height: 96px;
+}
+
+.filter-row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+.chip.active { background: var(--accent-green-soft); border-color: var(--accent-green); color: var(--accent-green); }
+
+.table-scroll { max-height: 430px; overflow-y: auto; }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table thead th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  padding: 6px 8px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+}
+.data-table tbody tr {
+  border-top: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+.data-table tbody tr:hover { background: var(--bg-panel-raised); }
+.data-table tbody tr.selected { background: var(--action-primary-soft); }
+.data-table td { padding: 8px; vertical-align: middle; }
+.data-table td.mono { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); }
+
+.row-name { font-weight: 600; }
+.row-sub { display: block; font-size: 10.5px; color: var(--text-tertiary); }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-available { background: var(--accent-green); }
+.dot-on_route { background: var(--accent-green); }
+.dot-maintenance { background: var(--accent-red); }
+
+.pill-inline {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill-Critical { background: var(--accent-red-soft); color: var(--accent-red); }
+.pill-High { background: var(--accent-amber-soft); color: var(--accent-amber); }
+.pill-Standard { background: var(--line-soft); color: var(--text-secondary); }
+
+.detail-empty { color: var(--text-tertiary); font-size: 12px; }
+.detail-card { display: flex; flex-direction: column; gap: 6px; }
+.detail-title { font-family: var(--font-display); font-weight: 600; font-size: 14px; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 4px; }
+.detail-item { font-size: 11px; color: var(--text-secondary); }
+.detail-item b { display: block; color: var(--text-primary); font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; }
+
+.legend { display: flex; gap: 12px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--text-tertiary); }
+.swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.swatch-good { background: var(--accent-green); }
+.swatch-warn { background: var(--accent-amber); }
+.swatch-bad { background: var(--accent-red); }
+.swatch-none { background: var(--line); border: 1px dashed var(--text-tertiary); }
+
+.graph-wrap {
+  position: relative;
+  padding: 10px 34px 4px;
+  display: flex;
+  align-items: center;
+}
+.graph-col-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  flex-shrink: 0;
+}
+#assignment-svg { width: 100%; height: 360px; flex: 1; }
+
+.node-label { font-family: var(--font-mono); font-size: 10px; fill: var(--text-secondary); }
+.node-label-selected { fill: var(--text-primary); font-weight: 600; }
+.node-dot { transition: r 0.15s ease; cursor: pointer; }
+.edge-line { fill: none; transition: stroke 0.4s ease, opacity 0.4s ease, d 0.6s cubic-bezier(.4,0,.2,1); cursor: pointer; }
+.edge-line:hover { opacity: 1 !important; stroke-width: 3.5; }
+
+.chart-wrap { padding: 4px 16px 16px; }
+
+.insight-block { padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+.insight-block:last-child { border-bottom: none; }
+.insight-block h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 10px;
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+.insight-copy { font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.insight-copy code { color: var(--geotab-blue); font-weight: 600; }
+
+.method-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.tag {
+  font-size: 10px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--action-primary-soft);
+  color: var(--action-primary);
+  font-weight: 600;
+  border: 1px solid var(--action-primary-light);
+}
+
+.solver-log { display: flex; flex-direction: column; gap: 7px; font-family: var(--font-mono); font-size: 11px; }
+.solver-log li { color: var(--text-tertiary); display: flex; gap: 8px; }
+.solver-log li.done { color: var(--text-secondary); }
+.solver-log li.done::before { content: "✓"; color: var(--accent-green); }
+.solver-log li.active { color: var(--text-primary); font-weight: 600; }
+.solver-log li.active::before { content: "›"; color: var(--action-primary); font-weight: 700; }
+.solver-log li.log-idle { color: var(--text-tertiary); font-style: italic; }
+
+.checklist { display: flex; flex-direction: column; gap: 8px; }
+.checklist li { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.check-icon { width: 15px; height: 15px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; font-weight: 700; }
+.check-icon.pass { background: var(--accent-green-soft); color: var(--accent-green); }
+.check-icon.fail { background: var(--accent-red-soft); color: var(--accent-red); }
+
+.risk-list { display: flex; flex-direction: column; gap: 8px; }
+.risk-item { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 7px 9px; background: var(--bg-inset); border-radius: var(--radius-sm); border: 1px solid var(--line-soft); }
+.risk-item .risk-id { font-family: var(--font-mono); font-weight: 600; }
+.risk-item .risk-reason { color: var(--text-tertiary); font-size: 10.5px; }
+.risk-empty { color: var(--text-tertiary); font-size: 12px; }
+
+.compare-list { display: flex; flex-direction: column; gap: 10px; }
+.compare-row { font-size: 11.5px; }
+.compare-row-top { display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--text-secondary); }
+.compare-row-top b { color: var(--text-primary); font-family: var(--font-mono); }
+.compare-track { position: relative; height: 5px; background: var(--line-soft); border-radius: 3px; }
+.compare-fill-baseline { position: absolute; top: 0; left: 0; height: 5px; border-radius: 3px; background: var(--text-tertiary); }
+.compare-fill-optimised { position: absolute; top: 0; left: 0; height: 5px; border-radius: 3px; background: var(--accent-green); }
+
+.timeline-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.zoom-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-tertiary); }
+.zoom-row input[type="range"] { accent-color: var(--action-primary); }
+
+.timeline-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--bg-panel); }
+.timeline-grid { position: relative; min-width: 900px; }
+.timeline-header {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  border-bottom: 1px solid var(--line-soft);
+  position: sticky; top: 0; background: var(--bg-panel); z-index: 2;
+}
+.timeline-header-label { padding: 10px 12px; font-size: 10.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
+.timeline-header-track { display: flex; }
+.timeline-hour { flex: 1; padding: 10px 6px; font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); border-left: 1px solid var(--line-soft); }
+
+.timeline-row { display: grid; grid-template-columns: 140px 1fr; border-bottom: 1px solid var(--line-soft); }
+.timeline-row-label { padding: 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.timeline-row-track { position: relative; height: 42px; }
+.timeline-block {
+  position: absolute;
+  top: 8px; height: 26px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: #1F2A3C;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-weight: 700;
+  border: 1px solid rgba(0,0,0,0.12);
+}
+
+.live-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.map-schematic {
+  position: relative;
+  height: 420px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--bg-inset);
+}
+.map-schematic svg { width: 100%; height: 100%; }
+.map-road { stroke: rgba(91,107,127,0.35); stroke-width: 2; fill: none; }
+.map-vehicle-dot { filter: drop-shadow(0 0 4px rgba(30,142,62,0.45)); }
+.map-vehicle-label { font-family: var(--font-mono); font-size: 8.5px; fill: var(--text-secondary); }
+.map-depot { fill: var(--action-primary); }
+
+.live-side-panel { display: flex; flex-direction: column; gap: 14px; }
+
+.driver-list { display: flex; flex-direction: column; gap: 8px; }
+.driver-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  cursor: pointer;
+}
+.driver-row:hover { border-color: var(--text-tertiary); }
+.driver-row.selected { border-color: var(--action-primary); background: var(--action-primary-soft); }
+.driver-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; font-family: var(--font-mono);
+  background: var(--bg-panel-raised); color: var(--text-secondary); flex-shrink: 0;
+}
+.driver-row-main { flex: 1; min-width: 0; }
+.driver-row-name { font-size: 12px; font-weight: 600; }
+.driver-row-sub { font-size: 10.5px; color: var(--text-tertiary); }
+.driver-status-tag { font-size: 9.5px; padding: 2px 7px; border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.driver-status-en_route { background: var(--accent-green-soft); color: var(--accent-green); }
+.driver-status-idle { background: var(--line-soft); color: var(--text-tertiary); }
+.driver-status-break { background: var(--accent-amber-soft); color: var(--accent-amber); }
+
+.credential-card {
+  background: var(--bg-inset);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.credential-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.credential-row span:first-child { color: var(--text-tertiary); font-family: var(--font-body); font-size: 10.5px; }
+.copy-btn {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 9.5px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-family: var(--font-body);
+}
+.copy-btn:hover { color: var(--text-primary); border-color: var(--text-tertiary); }
+
+.behaviour-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.gauge-card { background: var(--bg-inset); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 10px; }
+.gauge-label { font-size: 10px; color: var(--text-tertiary); margin-bottom: 6px; }
+.gauge-value { font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
+.gauge-track { height: 4px; background: var(--line-soft); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+.gauge-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease, background 0.4s ease; }
+
+.score-ring-wrap { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.score-ring-num { font-family: var(--font-mono); font-size: 26px; font-weight: 700; }
+.score-ring-text { font-size: 11px; color: var(--text-tertiary); }
+
+.adaptive-note {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--action-primary-soft);
+  border: 1px solid var(--action-primary-light);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+.analytics-grid { display: grid; grid-template-columns: 1fr 200px; gap: 16px; align-items: start; }
+
+.analytics-filters-aside {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+.analytics-filters-aside h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin-bottom: 12px; font-weight: 600; }
+.filter-field { margin-bottom: 10px; }
+.filter-field label { display: block; font-size: 10.5px; color: var(--text-tertiary); margin-bottom: 4px; }
+.filter-field select, .filter-field input {
+  width: 100%;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-family: var(--font-body);
+}
+
+.analytics-content { min-height: 460px; }
+.analytics-summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.analytics-chart-card { padding: 16px; }
+.analytics-title-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.analytics-title-row h2 { font-size: 15px; }
+.analytics-title-row span { font-size: 11px; color: var(--text-tertiary); }
+
+.feedback-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.feedback-item { padding: 10px 12px; background: var(--bg-inset); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
+.feedback-top { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); margin-bottom: 4px; }
+.feedback-stars { color: var(--accent-amber); letter-spacing: 1px; }
+.feedback-text { font-size: 12px; color: var(--text-secondary); }
+
+.settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.settings-card { padding: 18px; }
+.settings-card h2 { font-size: 13.5px; margin-bottom: 14px; }
+.field-row { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.field-row label { font-size: 11px; color: var(--text-tertiary); }
+.field-row input, .field-row select {
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-body);
+}
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.toggle-row:last-child { border-bottom: none; }
+.toggle-row-text { font-size: 12px; }
+.toggle-row-sub { font-size: 10.5px; color: var(--text-tertiary); }
+.switch { position: relative; width: 36px; height: 20px; background: var(--line-soft); border-radius: 999px; border: 1px solid var(--line); flex-shrink: 0; cursor: pointer; }
+.switch::after { content: ""; position: absolute; top: 1px; left: 1px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-tertiary); transition: transform 0.15s ease, background 0.15s ease; }
+.switch.on { background: var(--accent-green-soft); border-color: var(--accent-green); }
+.switch.on::after { transform: translateX(16px); background: var(--accent-green); }
+
+.badge-soon { font-size: 9px; padding: 2px 6px; border-radius: 999px; background: var(--action-primary-soft); color: var(--action-primary); font-weight: 700; text-transform: uppercase; margin-left: 6px; }
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 24px 24px;
+  max-width: 1600px;
+  margin: 0 auto;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.footer-endpoints { font-family: var(--font-mono); }
+
+.tooltip {
+  position: fixed;
+  z-index: 100;
+  background: var(--geotab-dark-blue);
+  border: 1px solid var(--geotab-dark-blue);
+  color: #FFFFFF;
+  font-size: 11px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+  max-width: 220px;
+  box-shadow: 0 6px 18px rgba(16,24,40,0.25);
+}
+.tooltip.visible { opacity: 1; transform: translateY(0); }
+.tooltip b { display: block; margin-bottom: 2px; font-family: var(--font-mono); color: #BFD6F2; }
+
+@media (max-width: 1280px) {
+  .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+  .workspace { grid-template-columns: 300px 1fr; }
+  .panel-insight { grid-column: 1 / -1; }
+  .live-grid { grid-template-columns: 1fr; }
+  .analytics-grid { grid-template-columns: 1fr 180px; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .sidebar { width: 200px; }
+}
+
+@media (max-width: 860px) {
+  .app-shell { flex-direction: column; }
+  .sidebar {
+    width: 100%; min-height: auto; position: static;
+    flex-direction: row; align-items: center; flex-wrap: wrap; gap: 4px;
+    padding: 10px 14px;
+  }
+  .sidebar-brand { padding: 0 10px 0 0; }
+  .sidebar-nav { flex-direction: row; flex-wrap: wrap; flex: none; }
+  .nav-group { flex-direction: row; }
+  .nav-children { flex-direction: row; margin: 0 0 0 4px; padding-left: 8px; border-left: 1px solid var(--line); }
+  .sidebar-footer { flex-direction: row; margin: 0 0 0 auto; padding: 0; border: none; }
+  .sidebar-footer .status-pill { width: auto; }
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .workspace { grid-template-columns: 1fr; }
+  .analytics-grid { grid-template-columns: 1fr; }
+  .analytics-summary-row { grid-template-columns: repeat(2, 1fr); }
+  .po-toolbar { row-gap: 8px; }
+}
+</style>
+</head>
+<body>
+
+<div class="tooltip" id="tooltip" role="tooltip" aria-hidden="true"></div>
+<div class="toast" id="toast"></div>
+
+<div class="app-shell">
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <svg class="brand-mark" width="28" height="28" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+      <path d="M15 2 L26 9 V21 L15 28 L4 21 V9 Z" stroke="#8A8D93" stroke-width="1.4" fill="none"/>
+      <path d="M9 16.5 L13.2 20.5 L21.5 10.5" stroke="#4C8DFF" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-name">GreenFlow<span class="brand-ai">AI</span></span>
+      <span class="brand-sub">Fleet Optimisation Console</span>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav" aria-label="Primary sections">
+    <div class="nav-group">
+      <button class="sidebar-item active" data-app-tab="plan" id="nav-plan-toggle">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 3v3M16 3v3"/><path d="M8 14l2.2 2.2L16 11"/></svg>
+        <span>Plan and Optimize</span>
+        <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="nav-children" id="plan-nav-children">
+        <button class="sidebar-child active" data-subtab="orders">Orders</button>
+        <button class="sidebar-child" data-subtab="routes">Routes</button>
+        <button class="sidebar-child" data-subtab="timeline">Timeline</button>
+      </div>
+    </div>
+
+    <button class="sidebar-item" data-app-tab="live">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>
+      <span>Live</span>
+    </button>
+
+    <div class="nav-group">
+      <button class="sidebar-item" data-app-tab="analytics" id="nav-analytics-toggle">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>
+        <span>Analytics</span>
+        <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="nav-children collapsed" id="analytics-nav-children">
+        <button class="sidebar-child" data-analytics-cat="planned_vs_actual">Planned vs. Actual</button>
+        <button class="sidebar-child" data-analytics-cat="order_status">Order Status</button>
+        <button class="sidebar-child" data-analytics-cat="rescheduled">Rescheduled Orders</button>
+        <button class="sidebar-child" data-analytics-cat="arrival_accuracy">Arrival Accuracy</button>
+        <button class="sidebar-child" data-analytics-cat="order_type">Order Type</button>
+        <button class="sidebar-child" data-analytics-cat="time_worked">Time Worked</button>
+        <button class="sidebar-child" data-analytics-cat="distance_traveled">Distance Traveled</button>
+        <button class="sidebar-child" data-analytics-cat="customer_feedback">Customer Feedback</button>
+        <button class="sidebar-child" data-analytics-cat="plan_history">Plan History</button>
+      </div>
+    </div>
+
+    <button class="sidebar-item" data-app-tab="settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="status-pill" id="scenario-pill" data-state="normal">
+      <span class="status-dot"></span>
+      <span class="status-label">Scenario · <strong id="scenario-label">Normal Demand</strong></span>
+    </div>
+    <div class="status-pill" id="optimisation-pill" data-state="idle">
+      <span class="status-dot"></span>
+      <span class="status-label">Plan · <strong id="optimisation-label">Baseline (Unoptimised)</strong></span>
+    </div>
+  </div>
+</aside>
+
+<div class="main-area">
+
+<main class="tab-panel active" id="tab-plan">
+  <div class="po-toolbar">
+    <span class="po-date-label">Select date:</span>
+    <input class="po-date-input" type="text" value="22-08-2026" readonly title="Planning date">
+    <button class="btn btn-ghost" id="btn-import-orders" title="Import a batch of orders from a file or upstream system">Import Orders</button>
+    <button class="btn btn-primary" id="btn-plan-routes" title="Run the quantum-inspired assignment solver">
+      <span class="btn-label">Plan Routes</span>
+      <span class="btn-spinner" aria-hidden="true"></span>
+    </button>
+    <button class="btn btn-ghost" id="btn-share-routes" title="Share the current plan with drivers">Share Routes</button>
+    <div class="po-toolbar-spacer"></div>
+    <button class="btn btn-amber" id="btn-peak" title="Simulate a high-demand surge across routes">Simulate Peak Demand</button>
+    <button class="btn btn-ghost" id="btn-reset" title="Return to normal demand and baseline assignment">Reset</button>
+    <div class="icon-btn-row">
+      <button class="icon-btn" id="icon-refresh" title="Refresh plan">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+      </button>
+      <button class="icon-btn" id="icon-lock" title="Lock current plan against edits">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- SUBTAB: ORDERS -->
+  <section class="subpanel active" data-subpanel="orders">
+    <div class="panel">
+      <div class="panel-body" style="padding-top:14px;">
+        <div class="toolbar-row">
+          <button class="btn btn-ghost" id="btn-add-order" style="padding:7px 12px;">+ Add order</button>
+          <button class="btn btn-ghost" id="btn-copy-orders" style="padding:7px 12px;">Copy orders</button>
+          <button class="btn btn-ghost" id="btn-unschedule-orders" style="padding:7px 12px;">Unschedule</button>
+          <div class="divider"></div>
+          <input class="search-input" id="orders-search" placeholder="Filter orders…">
+        </div>
+        <div class="table-scroll" style="max-height:560px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th></th><th>Order ID</th><th>Priority</th><th>Location</th>
+                <th>Boxes</th><th>Duration</th><th>Route</th>
+              </tr>
+            </thead>
+            <tbody id="orders-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SUBTAB: ROUTES -->
+  <section class="subpanel" data-subpanel="routes">
+    <section class="kpi-strip" id="kpi-strip" aria-label="Key performance indicators"></section>
+    <div class="workspace">
+      <section class="panel panel-fleet" aria-label="Fleet inventory">
+        <div class="panel-head"><h2>Routes</h2></div>
+        <div class="panel-body">
+          <div class="filter-row" id="vehicle-filters">
+            <button class="chip active" data-filter="all">All</button>
+            <button class="chip" data-filter="available">Available</button>
+            <button class="chip" data-filter="on_route">On Route</button>
+            <button class="chip" data-filter="maintenance">Maintenance</button>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="vehicles-table">
+              <thead><tr><th></th><th>Driver / Vehicle</th><th>Distance</th><th># Stops</th><th>Load</th></tr></thead>
+              <tbody id="vehicles-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel-foot" id="detail-panel">
+          <p class="detail-empty">Select a vehicle or route to see its full profile.</p>
+        </div>
+      </section>
+
+      <section class="panel panel-graph" aria-label="Vehicle to route assignment">
+        <div class="panel-head">
+          <h2>Vehicle → Route Assignment</h2>
+          <div class="legend">
+            <span class="legend-item"><i class="swatch swatch-good"></i>Efficient</span>
+            <span class="legend-item"><i class="swatch swatch-warn"></i>Marginal</span>
+            <span class="legend-item"><i class="swatch swatch-bad"></i>Constraint risk</span>
+            <span class="legend-item"><i class="swatch swatch-none"></i>Unassigned</span>
+          </div>
+        </div>
+        <div class="graph-wrap">
+          <div class="graph-col-label graph-col-label-left">FLEET</div>
+          <svg id="assignment-svg" preserveAspectRatio="none"></svg>
+          <div class="graph-col-label graph-col-label-right">ROUTES</div>
+        </div>
+      </section>
+
+      <section class="panel panel-insight" aria-label="Optimisation insight">
+        <div class="panel-head"><h2>Quantum-Inspired Optimisation</h2></div>
+        <div class="insight-block">
+          <p class="insight-copy">
+            Assignments are formulated as binary decisions <code>x&#8320;&#7522;</code> — vehicle <em>i</em>
+            to route <em>j</em> — over a QUBO-style cost surface.
+          </p>
+          <div class="method-tags">
+            <span class="tag">QUBO Model</span>
+            <span class="tag">Simulated Annealing</span>
+            <span class="tag">Constraint-Aware</span>
+          </div>
+        </div>
+        <div class="insight-block">
+          <h3>Solver Log</h3>
+          <ul class="solver-log" id="solver-log"><li class="log-idle">Awaiting optimisation run.</li></ul>
+        </div>
+        <div class="insight-block">
+          <h3>Constraint Verification</h3>
+          <ul class="checklist" id="checklist"></ul>
+        </div>
+        <div class="insight-block">
+          <h3>High-Risk Vehicles</h3>
+          <ul class="risk-list" id="risk-list"></ul>
+        </div>
+        <div class="insight-block">
+          <h3>Baseline vs Optimised</h3>
+          <div class="compare-list" id="compare-list"></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- SUBTAB: TIMELINE -->
+  <section class="subpanel" data-subpanel="timeline">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Driver Timeline</h2>
+        <span class="panel-hint">22-08-2026 · Saturday</span>
+      </div>
+      <div class="panel-body">
+        <div class="timeline-toolbar">
+          <div class="zoom-row">Zoom
+            <input type="range" id="timeline-zoom" min="60" max="160" value="100">
+          </div>
+        </div>
+        <div class="timeline-wrap">
+          <div class="timeline-grid" id="timeline-grid"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- TAB: LIVE -->
+<main class="tab-panel" id="tab-live">
+  <div class="live-grid">
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Live Fleet Map</h2>
+          <span class="panel-hint" id="live-clock">Updating…</span>
+        </div>
+        <div class="map-schematic" id="map-live"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>All Drivers — Manager View</h2></div>
+        <div class="table-scroll" style="max-height:280px;">
+          <table class="data-table">
+            <thead>
+              <tr><th>Driver</th><th>Status</th><th>Speed</th><th>Driving Score</th><th>ETA next stop</th></tr>
+            </thead>
+            <tbody id="live-drivers-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="live-side-panel">
+      <section class="panel">
+        <div class="panel-head"><h2>Driver Portal Access</h2></div>
+        <div class="panel-body">
+          <p class="insight-copy" style="margin-bottom:10px;">Create portal logins for drivers.</p>
+          <div class="driver-list" id="driver-portal-list"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="driver-detail-panel">
+        <div class="panel-head"><h2>Driver Detail</h2></div>
+        <div class="panel-body" id="driver-detail-body">
+          <p class="detail-empty">Select a driver above to view live route and driving score.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- TAB: ANALYTICS -->
+<main class="tab-panel" id="tab-analytics">
+  <div class="analytics-grid">
+    <div class="analytics-content" id="analytics-content"></div>
+    <aside class="analytics-filters-aside">
+      <h3>Filters</h3>
+      <div class="filter-field"><label>Date range</label><select><option>Last 7 days</option></select></div>
+      <div class="filter-field"><label>Driver</label><select><option>All drivers</option></select></div>
+    </aside>
+  </div>
+</main>
+
+<!-- TAB: SETTINGS -->
+<main class="tab-panel" id="tab-settings">
+  <div class="settings-grid">
+    <section class="panel settings-card">
+      <h2>Fleet Profile</h2>
+      <div class="field-row"><label>Company name</label><input value="GreenFlow Logistics Pvt. Ltd." readonly></div>
+      <div class="field-row"><label>Depot location</label><input value="Guindy Industrial Estate, Chennai" readonly></div>
+    </section>
+    <section class="panel settings-card">
+      <h2>Notifications</h2>
+      <div class="toggle-row"><div><div>Peak alerts</div></div><div class="switch on"></div></div>
+      <div class="toggle-row"><div><div>Harsh events</div></div><div class="switch on"></div></div>
+    </section>
+  </div>
+</main>
+
+<footer class="footer">
+  <span>GreenFlow AI · Fleet Optimisation Console</span>
+  <span class="footer-endpoints">/api/fleet · /api/predict/batch · /api/predict/telemetry</span>
+</footer>
+
+</div>
+</div>
+
+<script>
+const VEHICLES = [
+  { id: "V001", driver: "Driver 001", type: "Mini Truck", fuel: "Diesel", capacity: 12, efficiency: 11.5, co2Factor: 2.68, availableNormally: true },
+  { id: "V002", driver: "Driver 002", type: "Refrigerated Van", fuel: "Diesel", capacity: 10, efficiency: 9.2, co2Factor: 2.68, availableNormally: true },
+  { id: "V003", driver: "Driver 003", type: "Delivery Van", fuel: "Petrol", capacity: 14, efficiency: 13.8, co2Factor: 2.31, availableNormally: true },
+  { id: "V004", driver: "Driver 004", type: "Heavy Truck", fuel: "Diesel", capacity: 20, efficiency: 6.4, co2Factor: 2.68, availableNormally: true },
+  { id: "V005", driver: "Driver 005", type: "Light Van (CNG)", fuel: "CNG", capacity: 8, efficiency: 16.1, co2Factor: 2.1, availableNormally: true },
+];
+
+const ROUTES_BASE = [
+  { id: "R01", area: "Guindy", distanceKm: 18.4, demand: 10, priority: "Standard" },
+  { id: "R02", area: "T Nagar", distanceKm: 27.9, demand: 8, priority: "High" },
+  { id: "R03", area: "Adyar", distanceKm: 12.1, demand: 14, priority: "Standard" },
+  { id: "R04", area: "Ambattur", distanceKm: 34.6, demand: 16, priority: "Critical" },
+  { id: "R05", area: "Tambaram", distanceKm: 9.7, demand: 6, priority: "Standard" },
+];
+
+const state = {
+  scenario: "normal",
+  assignment: { V001: ["R01"], V002: ["R02"], V003: ["R03"], V004: ["R04"], V005: ["R05"] }
+};
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("visible");
+  setTimeout(() => t.classList.remove("visible"), 2600);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("btn-plan-routes").addEventListener("click", () => {
+    const btn = document.getElementById("btn-plan-routes");
+    btn.classList.add("is-running");
+    setTimeout(() => {
+      btn.classList.remove("is-running");
+      showToast("Plan updated — routes re-optimised");
+    }, 700);
+  });
+});
+</script>
+</body>
+</html>

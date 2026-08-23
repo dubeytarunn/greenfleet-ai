@@ -1,177 +1,123 @@
-# GreenFleet AI — ML Engine Component
+# GreenFlow AI - Real-Time Driver-Efficiency & Fleet Intelligence Engine
 
-> **Quantum-Inspired Fuel Consumption Prediction and Green Fleet Optimization**  
-> **Team Role: Person 2 — Machine Learning Engine**
+## 1. Overview & Architecture
 
----
+The **GreenFlow AI ML Engine** provides a dual-layer intelligence platform:
+1. **Trip-Level Fleet & Route Optimization Layer (Person 3 Integration):** Predicts trip fuel consumption and $CO_2$ emissions to build the fuel cost matrix for QUBO/Quantum Annealing route allocation.
+2. **Real-Time Driver-Efficiency & Behavioral Intelligence Layer (Person 2 ML Engine):** Ingests high-frequency (1Hz) vehicle telemetry streams, compares against LightGBM/GBDT expected fuel baselines, detects 6 driving inefficiency patterns, quantifies fuel waste ($L$, $₹\text{ INR}$, $kg\text{ }CO_2$), and issues debounced coaching alerts.
 
-## 1. Purpose & System Architecture
-
-The **ML Engine** is the predictive foundation of GreenFleet AI. It predicts trip fuel consumption ($L$) and estimated $CO_2$ emissions ($kg$) across all feasible vehicle-route combinations.
-
-### End-to-End Pipeline:
 ```
-Fleet & Route Data 
-       ↓
-   ML Engine ──→ [LightGBM / GBDT Feature Pipeline]
-       ↓
- Prediction Contract & Vehicle-Route Fuel Cost Matrix
-       ↓
- Quantum-Inspired QUBO / Annealing Optimizer (Person 3)
-       ↓
- Optimal Vehicle-Route Assignments
-       ↓
- Fleet Simulation & Benchmark KPIs (Person 4)
-       ↓
- Interactive Dashboard (Person 5)
-```
-
----
-
-## 2. Standard GreenFleet JSON Contracts
-
-The ML Engine natively ingests and produces data adhering strictly to project architecture contracts:
-
-### 1. Vehicle Contract
-```json
-{
-  "vehicle_id": "V001",
-  "vehicle_type": "Truck",
-  "fuel_type": "Diesel",
-  "vehicle_age": 4,
-  "fuel_capacity_l": 180,
-  "max_payload_kg": 5000,
-  "available": true
-}
-```
-
-### 2. Route Contract
-```json
-{
-  "route_id": "R001",
-  "origin": "Depot A",
-  "destination": "Zone 1",
-  "distance_km": 42.5,
-  "required_payload_kg": 3200,
-  "traffic_factor": 1.2,
-  "priority": 2
-}
-```
-
-### 3. Prediction Contract (Produced by ML Engine)
-```json
-{
-  "vehicle_id": "V001",
-  "route_id": "R001",
-  "predicted_fuel_l": 18.4,
-  "estimated_co2_kg": 48.8
-}
-```
-
-### 4. Assignment Contract (For Optimizer & Backend)
-```json
-{
-  "vehicle_id": "V001",
-  "route_id": "R001",
-  "predicted_fuel_l": 18.4,
-  "status": "assigned"
-}
+                  ┌────────────────────────────────────────┐
+                  │   Vehicle CAN-Bus / IoT Telemetry      │
+                  │ (Speed, Accel, RPM, Gear, Load, Slope) │
+                  └───────────────────┬────────────────────┘
+                                      │
+                                      ▼
+             ┌─────────────────────────────────────────────────┐
+             │       Features Preprocessor & Transformer       │
+             │ (Physics Indices, Power Proxy, Slope Work)      │
+             └────────┬───────────────────────────────┬────────┘
+                      │                               │
+                      ▼                               ▼
+    ┌───────────────────────────────────┐  ┌───────────────────────────────────┐
+    │     LightGBM / GBDT Baseline      │  │    Contextual Behavior Rules      │
+    │  - Expected Fuel (L/100km)        │  │  - Excessive Revving              │
+    │  - Expected Fuel Rate (L/h)       │  │  - Harsh Acceleration             │
+    │  - Expected Efficiency (km/L)     │  │  - Downhill Acceleration          │
+    └─────────────────┬─────────────────┘  │  - Inefficient Gear Selection     │
+                      │                    │  - Excessive Idling               │
+                      │                    └─────────────────┬─────────────────┘
+                      ▼                                      ▼
+             ┌─────────────────────────────────────────────────┐
+             │            Fuel Waste & Impact Estimator        │
+             │  - Fuel Deviation % = ((Act - Exp)/Exp) * 100   │
+             │  - Excess Fuel Wasted (Litres)                  │
+             │  - Economic Cost (₹ INR) & Carbon (kg CO2)      │
+             └────────────────────────┬────────────────────────┘
+                                      │
+                                      ▼
+             ┌─────────────────────────────────────────────────┐
+             │          Stateful Alert & Coaching Engine       │
+             │  - Severity: NORMAL | INFO | WARNING | CRITICAL │
+             │  - Debouncing & Escalation                      │
+             │  - Range & Refuel Urgency Predictor             │
+             └─────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Dataset Schema & Synthetic Generation
+## 2. Telemetry Schema & Data Dictionary
 
-Dataset generation is deterministic (`seed=42`) and incorporates domain physical formulas:
-- **Baseline Fuel Rates ($L/100\text{km}$):** Calibrated for Diesel, Petrol, Hybrid, and CNG across Vans, Light Commercials, Trucks, Semi-Trailers, and Buses.
-- **Cargo Load Factor:** Scaled by $\frac{\text{required\_payload\_kg}}{\text{max\_payload\_kg}}$.
-- **Traffic Congestion:** Quadratic stop-and-go penalty from `traffic_factor`.
-- **Topography & Weather:** Incline resistance (`road_grade`) and meteorological drag (`weather_factor`).
+The synthetic simulation and production ingest schema consists of 25 standard physics-grounded fields:
 
-```bash
-# Generate synthetic dataset adhering to contracts
-python ml_engine/generate_data.py --samples 6000 --seed 42
-```
-
----
-
-## 4. Feature Engineering
-
-The feature pipeline in `features.py` transforms raw inputs into physics-grounded regressors:
-- `payload_capacity_ratio`: $\frac{\text{required\_payload\_kg}}{\text{max\_payload\_kg}}$
-- `speed_efficiency_deviation`: $(\text{average\_speed\_kmph} - 65.0)^2$
-- `traffic_speed_ratio`: $\frac{\text{traffic\_factor}}{\text{average\_speed\_kmph} + 1.0}$
-- `grade_distance_work`: $\text{distance\_km} \times \left(1.0 + \frac{\text{road\_grade}}{100.0}\right)$
-- `weather_stress_index`: $(\text{weather\_factor} - 1.0) \times \text{distance\_km}$
-
----
-
-## 5. Model Training & Evaluation
-
-- **Methodology:** 70% Train ($N=4,199$), 15% Validation ($N=901$), 15% Holdout Test ($N=900$) with zero data leakage.
-
-```bash
-# Train models
-python ml_engine/train.py --seed 42
-```
-
-### Holdout Test Set Performance:
-| Model | MAE (Litres) | RMSE (Litres) | $R^2$ Score | MAPE (%) |
-| :--- | :---: | :---: | :---: | :---: |
-| **LightGBM / HistGBDT (Primary)** | **1.99 L** | **3.19 L** | **0.9939** | **4.17%** |
-| Random Forest (Baseline) | 2.71 L | 4.39 L | 0.9885 | 5.82% |
-| Linear Regression (Baseline) | 10.71 L | 14.43 L | 0.8752 | 23.94% |
+| Field Name | Type | Unit / Format | Description |
+| :--- | :--- | :--- | :--- |
+| `vehicle_id` | `string` | e.g. `"V001"` | Unique fleet asset identifier |
+| `timestamp` | `string` | ISO 8601 | UTC observation timestamp |
+| `vehicle_type` | `string` | Category | `Van`, `Light Commercial`, `Truck`, `Semi-Trailer`, `Bus` |
+| `vehicle_age_years`| `int` | Years | Age of vehicle chassis and engine |
+| `engine_size_l` | `float` | Litres | Engine displacement (e.g. 2.0L to 12.8L) |
+| `vehicle_weight_kg`| `float` | Kilograms | Total vehicle weight (curb weight + cargo payload) |
+| `fuel_type` | `string` | Category | `Diesel`, `Petrol`, `Hybrid`, `CNG`, `Electric` |
+| `latitude` | `float` | Degrees | GPS Latitude coordinate |
+| `longitude` | `float` | Degrees | GPS Longitude coordinate |
+| `speed_kmph` | `float` | km/h | Instantaneous ground speed |
+| `acceleration_mps2`| `float` | $\text{m/s}^2$ | Rate of speed change (positive = accel, negative = braking) |
+| `rpm` | `float` | RPM | Engine revolutions per minute |
+| `gear` | `int` | 0 - 8 | Active transmission gear (0 = Neutral/Park) |
+| `throttle_position_pct`| `float` | 0.0 - 100.0% | Accelerator pedal opening percentage |
+| `brake_pressure_pct` | `float` | 0.0 - 100.0% | Brake hydraulic pressure applied |
+| `engine_load_pct` | `float` | 0.0 - 100.0% | Relative calculated engine load from ECU |
+| `road_slope_pct` | `float` | % grade | Road incline/decline grade (negative = downhill) |
+| `road_type` | `string` | Category | `Highway`, `Urban`, `Rural`, `Mountain` |
+| `traffic_level` | `string` | Category | `Low`, `Medium`, `High`, `Gridlock` |
+| `ambient_temperature_c` | `float`| °C | Ambient outside temperature |
+| `distance_travelled_km` | `float`| Kilometres | Cumulative trip distance |
+| `idle_duration_sec` | `int` | Seconds | Continuous stationary idle duration with engine active |
+| `fuel_level_l` | `float` | Litres | Current remaining fuel in vehicle tank |
+| `fuel_rate_lph` | `float` | Litres / Hour | Instantaneous fuel flow rate |
+| `fuel_consumption_l_100km` | `float`| L / 100km | Instantaneous or distance-integrated fuel rate |
 
 ---
 
-## 6. How to Use the Inference Interface
+## 3. Driving Behavior Detection Scenarios
 
-### Predict a Single Trip (Returns Prediction Contract)
-```python
-from ml_engine.predict import predict_trip, create_assignment
+The engine identifies 6 distinct behaviors without false positives:
 
-vehicle = {
-    "vehicle_id": "V001",
-    "vehicle_type": "Truck",
-    "fuel_type": "Diesel",
-    "vehicle_age": 4,
-    "fuel_capacity_l": 180,
-    "max_payload_kg": 5000,
-    "available": True
-}
-
-route = {
-    "route_id": "R001",
-    "origin": "Depot A",
-    "destination": "Zone 1",
-    "distance_km": 42.5,
-    "required_payload_kg": 3200,
-    "traffic_factor": 1.2,
-    "priority": 2
-}
-
-# Returns Prediction Contract
-pred = predict_trip(vehicle, route)
-print(pred)
-# {'vehicle_id': 'V001', 'route_id': 'R001', 'predicted_fuel_l': 14.6, 'estimated_co2_kg': 39.1}
-
-# Create Assignment Contract
-assign = create_assignment(pred["vehicle_id"], pred["route_id"], pred["predicted_fuel_l"])
-print(assign)
-# {'vehicle_id': 'V001', 'route_id': 'R001', 'predicted_fuel_l': 14.6, 'status': 'assigned'}
-```
-
-### Build Fuel Cost Matrix for Quantum Optimizer (Person 3)
-```python
-from ml_engine.predict import build_fuel_cost_matrix
-
-matrix = build_fuel_cost_matrix(vehicles_list, routes_list)
-# Matrix format: {"V001": {"R001": 14.6, "R002": 32.1}, "V002": {...}}
-```
+1. **Normal Eco-Driving (`normal`):** Smooth throttle progression, optimal gear engagement, fuel rate within $\pm 10\%$ of ML baseline.
+2. **Excessive Revving (`excessive_revving`):** RPM $> 2400$ for heavy commercial or $> 3500$ for light vehicles disproportionate to speed.
+3. **Harsh Acceleration (`harsh_acceleration`):** Rapid acceleration $\ge 2.5\text{ m/s}^2$ accompanied by $>80\%$ throttle opening.
+4. **Downhill Acceleration (`downhill_acceleration`):** Active throttle application while descending negative gradients ($\le -1.8\%$) instead of engine-braking.
+5. **Inefficient Gear Selection (`inefficient_gear`):** Engine lugging (high gear at low speed under heavy load) or running low gear at high cruising speed.
+6. **Excessive Idling (`excessive_idling`):** Vehicle stationary ($\text{speed} < 1\text{ km/h}$) with engine burning fuel for $>45\text{ seconds}$.
 
 ---
 
-## 7. Automated Tests
-```bash
-python ml_engine/test_inference.py
-```
+## 4. Model Performance & Evaluation
+
+The LightGBM / GBDT telemetry model was trained with temporal/trip isolation:
+
+- **Validation $R^2$ Score:** `0.9991`
+- **Test $R^2$ Score:** `0.9990`
+- **Test MAE:** `0.18 L / 100km`
+- **Test RMSE:** `0.65 L / 100km`
+- **Zero Leakage:** No waste, deviation, or cost outputs are present in feature space.
+
+---
+
+## 5. Real-Time Latency Benchmark Profile
+
+Evaluated on 500 stream iterations:
+- **Single-Frame Expected Fuel Prediction:** Mean = `17.10 ms`, P95 = `23.40 ms`, Max = `69.58 ms`.
+- **End-to-End Alert & Waste Engine (15-Frame Window):** Mean = `14.64 ms`, P95 = `19.43 ms`, Max = `44.04 ms`.
+- **Throughput:** Capable of processing over **65 vehicle telemetry windows per second** per single CPU thread.
+
+---
+
+## 6. Migration Guide: Transitioning to Real CAN-Bus / IoT Data
+
+To replace synthetic simulation with real-world telematics:
+1. **Connect Telematics Gateway:** Stream vehicle OBD-II / J1939 CAN-bus feeds into standard JSON schema mapping.
+2. **Validate Field Mappings:** Ensure standard units ($\text{km/h}$, $\text{m/s}^2$, $\text{RPM}$, $\text{L/h}$).
+3. **Re-train Model:** Execute `python ml_engine/training/train_fuel_model.py --data path/to/real_telemetry.csv`.
+4. **Deploy Alert Engine:** Call `process_telemetry(window)` inside backend WebSocket / streaming consumer.

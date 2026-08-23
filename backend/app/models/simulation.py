@@ -72,6 +72,28 @@ class BenchmarkComparison(BaseModel):
     inefficient_assignments_reduced: int = Field(..., description="Reduction in inefficient vehicle-route pairings")
 
 
+class CarbonBudgetStatus(str, Enum):
+    HEALTHY = "HEALTHY"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+    OVER_BUDGET = "OVER_BUDGET"
+
+
+class CarbonBudgetModel(BaseModel):
+    """Operational Carbon Budget State."""
+    budget_kg: float = Field(..., description="Total fleet carbon quota in kg CO2")
+    consumed_kg: float = Field(default=0.0, description="Realised CO2 emissions from completed trips (kg)")
+    projected_kg: float = Field(default=0.0, description="Expected future CO2 emissions from planned routes (kg)")
+    projected_total_kg: float = Field(default=0.0, description="Total expected emissions (consumed + projected)")
+    remaining_budget_kg: float = Field(default=0.0, description="Net remaining budget in kg")
+    budget_headroom_kg: float = Field(default=0.0, description="Safe headroom before exceeding budget (kg)")
+    budget_utilisation_pct: float = Field(default=0.0, description="Budget consumption percentage")
+    status: CarbonBudgetStatus = Field(default=CarbonBudgetStatus.HEALTHY, description="Operational carbon status")
+    dynamic_co2_penalty: float = Field(default=1.0, description="Dynamic multiplier w_co2 for optimizer cost matrix")
+    co2_avoided_kg: float = Field(default=0.0, description="CO2 saved vs uncoordinated baseline (kg)")
+    hard_cap_enabled: bool = Field(default=False, description="If true, optimizer enforces budget_kg as a hard constraint")
+
+
 class SimulationStateResponse(BaseModel):
     """Full snapshot of the simulation environment."""
     scenario: ScenarioType
@@ -84,3 +106,4 @@ class SimulationStateResponse(BaseModel):
     baseline_assignments: List[AssignmentModel]
     greenflow_assignments: List[AssignmentModel]
     benchmark: Optional[BenchmarkComparison] = None
+    carbon_budget: Optional[CarbonBudgetModel] = None

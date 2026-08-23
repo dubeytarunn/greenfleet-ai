@@ -69,10 +69,16 @@ def solve_baseline_heuristic(
                     route_id=route.route_id,
                     predicted_fuel_l=round(fuel_val, 1),
                     estimated_co2_kg=round(co2_val, 1),
+                    fuel_lower_l=pred.fuel_lower_l if pred else None,
+                    fuel_upper_l=pred.fuel_upper_l if pred else None,
+                    uncertainty_l=pred.uncertainty_l if pred else None,
+                    uncertainty_pct=pred.uncertainty_pct if pred else None,
+                    risk_adjusted_fuel_l=pred.risk_adjusted_fuel_l if pred else None,
                     operating_cost=op_cost,
                     status="assigned",
                 )
             )
+
         else:
             # Route unassigned (shortfall)
             assignments.append(

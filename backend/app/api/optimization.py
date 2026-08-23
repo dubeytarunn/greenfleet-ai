@@ -79,6 +79,12 @@ def compute_assignments(request: OptimizeRequest):
             route_id=p.route_id,
             predicted_fuel_l=p.predicted_fuel_l,
             estimated_co2_kg=p.estimated_co2_kg,
+            fuel_lower_l=p.fuel_lower_l,
+            fuel_upper_l=p.fuel_upper_l,
+            uncertainty_l=p.uncertainty_l,
+            uncertainty_pct=p.uncertainty_pct,
+            risk_adjusted_fuel_l=p.risk_adjusted_fuel_l,
+            confidence_level=p.confidence_level or 0.90,
         )
         for p in predictions
     ]
@@ -116,10 +122,16 @@ def compute_assignments(request: OptimizeRequest):
             vehicle_id=str(a["vehicle_id"]),
             route_id=str(a["route_id"]),
             predicted_fuel_l=float(a["predicted_fuel_l"] or 0.0),
+            fuel_lower_l=a.get("fuel_lower_l"),
+            fuel_upper_l=a.get("fuel_upper_l"),
+            uncertainty_l=a.get("uncertainty_l"),
+            uncertainty_pct=a.get("uncertainty_pct"),
+            risk_adjusted_fuel_l=a.get("risk_adjusted_fuel_l"),
             status="assigned" if a.get("status") == "assigned" else "assigned",
         )
         for a in raw_assignments
     ]
+
 
     assigned_route_ids = {a.route_id for a in assignments}
     unassigned_routes = [r.route_id for r in request.routes if r.route_id not in assigned_route_ids]

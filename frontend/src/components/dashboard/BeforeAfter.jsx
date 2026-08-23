@@ -1,44 +1,49 @@
 import React from 'react'
-import { Scale, ArrowDownRight, ArrowUpRight, CheckCircle2 } from 'lucide-react'
+import { Scale, ArrowDownRight, ArrowUpRight, CheckCircle2, AlertTriangle } from 'lucide-react'
 
-export default function BeforeAfter({ benchmark }) {
-  const base = benchmark?.baseline
-  const green = benchmark?.greenflow
+export default function BeforeAfter({
+  benchmark = null,
+  isOptimized = false,
+}) {
+  const baseline = benchmark?.baseline
+  const greenflow = benchmark?.greenflow
 
   const comparisonRows = [
     {
-      metric: 'Fuel Consumption',
-      baseline: base ? `${base.total_fuel_l} L` : '484.9 L',
-      greenfleet: green ? `${green.total_fuel_l} L` : '397.9 L',
-      delta: benchmark ? `-${benchmark.fuel_saved_l} L (-${benchmark.fuel_saved_pct}%)` : '-87.0 L (-17.9%)',
+      metric: 'Total Fuel Consumption',
+      baseline: baseline ? `${baseline.total_fuel_l.toFixed(1)} L` : '--',
+      greenfleet: greenflow ? `${greenflow.total_fuel_l.toFixed(1)} L` : '--',
+      delta: benchmark ? `-${benchmark.fuel_saved_l.toFixed(1)} L (-${benchmark.fuel_saved_pct.toFixed(1)}%)` : '--',
       isImprovement: true,
     },
     {
       metric: 'Estimated CO₂ Emissions',
-      baseline: base ? `${(base.estimated_co2_kg / 1000).toFixed(2)} t` : '1.30 t',
-      greenfleet: green ? `${(green.estimated_co2_kg / 1000).toFixed(2)} t` : '1.02 t',
-      delta: benchmark ? `-${(benchmark.co2_reduced_kg / 1000).toFixed(2)} t (-${benchmark.co2_reduced_pct}%)` : '-0.27 t (-21.1%)',
+      baseline: baseline ? `${(baseline.estimated_co2_kg / 1000).toFixed(2)} t (${baseline.estimated_co2_kg.toFixed(0)} kg)` : '--',
+      greenfleet: greenflow ? `${(greenflow.estimated_co2_kg / 1000).toFixed(2)} t (${greenflow.estimated_co2_kg.toFixed(0)} kg)` : '--',
+      delta: benchmark ? `-${(benchmark.co2_reduced_kg / 1000).toFixed(2)} t (-${benchmark.co2_reduced_pct.toFixed(1)}%)` : '--',
       isImprovement: true,
     },
     {
       metric: 'Total Operating Cost',
-      baseline: base ? `$${base.total_operating_cost.toLocaleString()}` : '$2,475.26',
-      greenfleet: green ? `$${green.total_operating_cost.toLocaleString()}` : '$2,142.67',
-      delta: benchmark ? `-$${benchmark.cost_saved.toLocaleString()} (-${benchmark.cost_saved_pct}%)` : '-$332.59 (-13.4%)',
+      baseline: baseline ? `$${baseline.total_operating_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '--',
+      greenfleet: greenflow ? `$${greenflow.total_operating_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '--',
+      delta: benchmark ? `-$${benchmark.cost_saved.toLocaleString(undefined, { maximumFractionDigits: 0 })} (-${benchmark.cost_saved_pct.toFixed(1)}%)` : '--',
       isImprovement: true,
     },
     {
       metric: 'Fleet Utilisation Rate',
-      baseline: base ? `${base.fleet_utilisation_pct}%` : '66.7%',
-      greenfleet: green ? `${green.fleet_utilisation_pct}%` : '88.9%',
-      delta: '+22.2%',
+      baseline: baseline ? `${baseline.fleet_utilisation_pct.toFixed(0)}%` : '--',
+      greenfleet: greenflow ? `${greenflow.fleet_utilisation_pct.toFixed(0)}%` : '--',
+      delta: benchmark
+        ? `${(greenflow.fleet_utilisation_pct - baseline.fleet_utilisation_pct) >= 0 ? '+' : ''}${(greenflow.fleet_utilisation_pct - baseline.fleet_utilisation_pct).toFixed(1)}%`
+        : '--',
       isImprovement: true,
     },
     {
-      metric: 'Inefficient Dispatches',
-      baseline: base ? `${base.inefficient_assignments_count} routes` : '5 routes',
-      greenfleet: green ? `${green.inefficient_assignments_count} routes` : '0 routes',
-      delta: benchmark ? `-${benchmark.inefficient_assignments_reduced} suboptimal` : '-5 suboptimal',
+      metric: 'Inefficient Pairings',
+      baseline: baseline ? `${baseline.inefficient_assignments_count} routes` : '--',
+      greenfleet: greenflow ? `${greenflow.inefficient_assignments_count} routes` : '--',
+      delta: benchmark ? `-${benchmark.inefficient_assignments_reduced} eliminated` : '--',
       isImprovement: true,
     },
   ]
@@ -50,22 +55,31 @@ export default function BeforeAfter({ benchmark }) {
         <div className="flex items-center gap-2">
           <Scale className="h-4 w-4 text-emerald-400" />
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-200">
-            Baseline Heuristic vs GreenFleet Quantum-Inspired Optimization
+            Baseline Heuristic vs GreenFleet Optimization
           </h2>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          <span>Dynamic Benchmark Verified</span>
+          {isOptimized ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Optimisation Verified ({benchmark?.scenario || 'Active'})</span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+              <span className="text-amber-400">Baseline Active (Run Optimisation to compare)</span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Comparison Table / Grid */}
+      {/* Comparison Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead>
             <tr className="border-b border-slate-800/60 bg-slate-950/30 text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
               <th className="py-2.5 px-4">Metric</th>
-              <th className="py-2.5 px-4 text-right">Legacy Baseline (FIFO)</th>
+              <th className="py-2.5 px-4 text-right">Uncoordinated Baseline</th>
               <th className="py-2.5 px-4 text-right">GreenFleet AI</th>
               <th className="py-2.5 px-4 text-right">Impact / Savings</th>
             </tr>

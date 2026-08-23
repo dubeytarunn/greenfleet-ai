@@ -37,10 +37,10 @@ docs/algorithm.md                       (empty, 0 bytes)
 - No FastAPI app or router exists (`backend/app/main.py` doesn't exist) — no confirmed
   call site or input/output contract for this module.
 - No fuel-consumption prediction module or output format exists (Person 1's slice).
-- No `GREENFLEET_PLANNING.md` or architecture doc describing module handoffs.
+- No `GREENFLOW_PLANNING.md` or architecture doc describing module handoffs.
 
 Given none of that exists yet, this plan uses **ChargeFlow AI's already-solved
-equivalent module** (provided as reference material, since GreenFleet is explicitly
+equivalent module** (provided as reference material, since GreenFlow is explicitly
 "architecturally transferred" from ChargeFlow and this assignment problem "mirrors
 ChargeFlow's EV → charging-station assignment problem exactly") as the concrete
 precedent to adapt. Every field name/type below is therefore **proposed**, not

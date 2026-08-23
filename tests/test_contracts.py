@@ -91,7 +91,7 @@ class TestGreenFleetContracts(unittest.TestCase):
         self.assertEqual(p.route_id, "R001")
         self.assertEqual(p.predicted_fuel_l, 18.4)
         self.assertEqual(p.estimated_co2_kg, 48.8)
-        self.assertEqual(p.model_dump(), raw_prediction)
+        self.assertEqual(p.model_dump(exclude_unset=True), raw_prediction)
 
     def test_assignment_contract(self):
         """Verify Assignment schema matches the exact required specification."""
@@ -106,7 +106,8 @@ class TestGreenFleetContracts(unittest.TestCase):
         self.assertEqual(a.route_id, "R001")
         self.assertEqual(a.predicted_fuel_l, 18.4)
         self.assertEqual(a.status, "assigned")
-        self.assertEqual(a.model_dump(), raw_assignment)
+        self.assertEqual(a.model_dump(exclude_unset=True), raw_assignment)
+
 
     def test_api_health_and_root(self):
         h = health()

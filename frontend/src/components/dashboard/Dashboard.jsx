@@ -1,150 +1,293 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import KPIGrid from './KPIGrid.jsx'
 import ActionBar from './ActionBar.jsx'
+import RecommendationPanel from './RecommendationPanel.jsx'
 import FleetMapPlaceholder from './FleetMapPlaceholder.jsx'
 import FleetStatus from './FleetStatus.jsx'
 import AnalyticsPlaceholder from './AnalyticsPlaceholder.jsx'
 import BeforeAfter from './BeforeAfter.jsx'
+import WhatIfSimulatorModal from './WhatIfSimulatorModal.jsx'
+import ScenarioMatrixModal from './ScenarioMatrixModal.jsx'
+import ShiftSummaryModal from './ShiftSummaryModal.jsx'
+import api from '../../services/api.js'
+import { AlertCircle, RefreshCw } from 'lucide-react'
 
 export default function Dashboard() {
   const [simulationState, setSimulationState] = useState(null)
   const [benchmark, setBenchmark] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [activeAction, setActiveAction] = useState('')
+  const [recommendation, setRecommendation] = useState(null)
+  const [economics, setEconomics] = useState(null)
+  const [scoringMap, setScoringMap] = useState({})
+  const [isOptimized, setIsOptimized] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [activeAction, setActiveAction] = useState(null)
   const [error, setError] = useState(null)
 
-  // Fetch current simulation state and benchmark from backend
-  const fetchState = useCallback(async () => {
+  // Modals state
+  const [isWhatIfOpen, setIsWhatIfOpen] = useState(false)
+  const [isScenariosOpen, setIsScenariosOpen] = useState(false)
+  const [isShiftSummaryOpen, setIsShiftSummaryOpen] = useState(false)
+
+  // Fetch decision support data (recommendations & economics)
+  const fetchDecisionData = async () => {
     try {
-      setError(null)
-      const [stateRes, benchRes] = await Promise.all([
-        fetch('/api/simulate/state'),
-        fetch('/api/benchmark'),
+      const [rec, econ] = await Promise.allSettled([
+        api.getRecommendation(),
+        api.getEconomics(),
       ])
-      if (stateRes.ok) {
-        const data = await stateRes.json()
-        setSimulationState(data)
-      }
-      if (benchRes.ok) {
-        const benchData = await benchRes.json()
-        setBenchmark(benchData)
+      if (rec.status === 'fulfilled') setRecommendation(rec.value)
+      if (econ.status === 'fulfilled') setEconomics(econ.value)
+    } catch (err) {
+      console.warn('[Dashboard] Decision data fetch warning:', err.message)
+    }
+  }
+
+  // Fetch explainable scoring for vehicles & routes
+  const fetchScoringData = async (vehicles, routes) => {
+    if (!vehicles || !routes || vehicles.length === 0 || routes.length === 0) return
+    try {
+      const scoringRes = await api.getScoring(vehicles, routes)
+      if (scoringRes?.scores) {
+        const map = {}
+        for (const item of scoringRes.scores) {
+          map[`${item.vehicle_id}_${item.route_id}`] = item
+        }
+        setScoringMap(map)
       }
     } catch (err) {
-      console.error('Failed to fetch simulation data:', err)
-      setError('Backend connection error')
+      console.warn('[Dashboard] Scoring fetch warning:', err.message)
+    }
+  }
+
+  // Load initial simulation state & benchmark from FastAPI
+  const loadInitialData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const state = await api.getSimulationState()
+      setSimulationState(state)
+      setIsOptimized(state.status === 'optimized' || (state.greenflow_assignments && state.greenflow_assignments.length > 0))
+
+      if (state.benchmark) {
+        setBenchmark(state.benchmark)
+      } else {
+        const bmk = await api.getBenchmark()
+        setBenchmark(bmk)
+      }
+
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
+    } catch (err) {
+      console.error('[Dashboard] Initial data load failed:', err)
+      setError(`Failed to connect to GreenFleet Backend at ${import.meta.env.VITE_API_URL || 'http://localhost:8000'}. Ensure backend server is running. (${err.message})`)
+    } finally {
+      setLoading(false)
     }
   }, [])
 
+
   useEffect(() => {
-    fetchState()
-  }, [fetchState])
+    loadInitialData()
+  }, [loadInitialData])
 
-  // Simulation Action Handlers
+  // 1. Reset Simulation Handler
   const handleReset = async () => {
-    setLoading(true)
     setActiveAction('reset')
+    setLoading(true)
+    setError(null)
     try {
-      const res = await fetch('/api/simulate/reset', { method: 'POST' })
-      if (res.ok) {
-        await fetchState()
-      }
+      const state = await api.resetSimulation()
+      setSimulationState(state)
+      setBenchmark(state.benchmark || null)
+      setIsOptimized(false)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
-      console.error(err)
+      setError(`Reset failed: ${err.message}`)
     } finally {
       setLoading(false)
-      setActiveAction('')
+      setActiveAction(null)
     }
   }
 
-  const handlePeakDemand = async () => {
-    setLoading(true)
+  // 2. Simulate Peak Demand Handler
+  const handleSimulatePeak = async () => {
     setActiveAction('peak')
+    setLoading(true)
+    setError(null)
     try {
-      const res = await fetch('/api/simulate/peak', { method: 'POST' })
-      if (res.ok) {
-        await fetchState()
-      }
+      const state = await api.simulatePeak()
+      setSimulationState(state)
+      setBenchmark(state.benchmark || null)
+      setIsOptimized(false)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
-      console.error(err)
+      setError(`Peak simulation failed: ${err.message}`)
     } finally {
       setLoading(false)
-      setActiveAction('')
+      setActiveAction(null)
     }
   }
 
-  const handleHighTraffic = async () => {
-    setLoading(true)
+  // 3. Simulate High Traffic Handler
+  const handleSimulateTraffic = async () => {
     setActiveAction('traffic')
+    setLoading(true)
+    setError(null)
     try {
-      const res = await fetch('/api/simulate/traffic', { method: 'POST' })
-      if (res.ok) {
-        await fetchState()
-      }
+      const state = await api.simulateTraffic()
+      setSimulationState(state)
+      setBenchmark(state.benchmark || null)
+      setIsOptimized(false)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
-      console.error(err)
+      setError(`Traffic simulation failed: ${err.message}`)
     } finally {
       setLoading(false)
-      setActiveAction('')
+      setActiveAction(null)
     }
   }
 
+  // 4. Run GreenFleet Quantum-Inspired Optimization Handler
   const handleOptimize = async () => {
-    setLoading(true)
     setActiveAction('optimize')
+    setLoading(true)
+    setError(null)
     try {
-      const res = await fetch('/api/simulate/optimize', { method: 'POST' })
-      if (res.ok) {
-        await fetchState()
-      }
+      const state = await api.runOptimization()
+      setSimulationState(state)
+      setBenchmark(state.benchmark || null)
+      setIsOptimized(true)
+      await Promise.all([
+        fetchScoringData(state.vehicles, state.routes),
+        fetchDecisionData(),
+      ])
     } catch (err) {
-      console.error(err)
+      setError(`Optimization failed: ${err.message}`)
     } finally {
       setLoading(false)
-      setActiveAction('')
+      setActiveAction(null)
     }
   }
+
+  const activeAssignments = isOptimized
+    ? simulationState?.greenflow_assignments || []
+    : simulationState?.baseline_assignments || []
 
   return (
     <main className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 py-5 space-y-4">
+      {/* User-Visible Error Notification */}
       {error && (
-        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-xs text-rose-300">
-          {error} — ensure backend is running on port 8000
+        <div className="flex items-center justify-between rounded-lg border border-rose-500/40 bg-rose-950/40 p-3 text-xs text-rose-300 shadow-md backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={loadInitialData}
+            className="flex items-center gap-1 rounded bg-rose-500/20 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/30"
+          >
+            <RefreshCw className="h-3 w-3" /> Retry
+          </button>
         </div>
       )}
 
-      {/* 1. Primary Metrics Row */}
-      <KPIGrid benchmark={benchmark} state={simulationState} />
+      {/* 1. Commercial Economic Impact KPI Row */}
+      <KPIGrid
+        benchmark={benchmark}
+        simulationState={simulationState}
+        carbonBudget={simulationState?.carbon_budget}
+        isOptimized={isOptimized}
+        economics={economics}
+      />
 
-      {/* 2. Simulation & Optimization Action Bar */}
+      {/* 2. Simulation & Optimization Action Bar with Planning Triggers */}
       <ActionBar
         scenario={simulationState?.scenario || 'normal'}
-        status={simulationState?.status || 'ready'}
+        status={simulationState?.status || 'normal_state'}
+        isOptimized={isOptimized}
         loading={loading}
         activeAction={activeAction}
+        carbonBudget={simulationState?.carbon_budget}
         onReset={handleReset}
-        onPeak={handlePeakDemand}
-        onTraffic={handleHighTraffic}
+        onSimulatePeak={handleSimulatePeak}
+        onSimulateTraffic={handleSimulateTraffic}
+        onOptimize={handleOptimize}
+        onOpenWhatIf={() => setIsWhatIfOpen(true)}
+        onOpenScenarios={() => setIsScenariosOpen(true)}
+        onOpenShiftSummary={() => setIsShiftSummaryOpen(true)}
+      />
+
+      {/* 3. Dispatcher "What Should I Do?" Actionable Recommendation Panel */}
+      <RecommendationPanel
+        recommendation={recommendation}
+        isOptimized={isOptimized}
         onOptimize={handleOptimize}
       />
 
-      {/* 3. Main Network Map & Fleet Status Section */}
+      {/* 4. Main Network Map & Fleet Status Section */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        {/* Left / Large: Fleet & Route Network (8 of 12 cols on desktop) */}
+        {/* Left / Large: Fleet & Route Network */}
         <div className="lg:col-span-8 flex flex-col min-h-[420px]">
-          <FleetMapPlaceholder state={simulationState} benchmark={benchmark} />
+          <FleetMapPlaceholder />
         </div>
 
-        {/* Right / Narrow: Fleet Status (4 of 12 cols on desktop) */}
+        {/* Right / Narrow: Fleet Status & Explainability */}
         <div className="lg:col-span-4 flex flex-col min-h-[420px]">
-          <FleetStatus state={simulationState} benchmark={benchmark} />
+          <FleetStatus
+            vehicles={simulationState?.vehicles || []}
+            routes={simulationState?.routes || []}
+            assignments={activeAssignments}
+            scoringMap={scoringMap}
+            isOptimized={isOptimized}
+          />
         </div>
       </div>
 
-      {/* 4. Analytics Panels (Fuel Consumption Analysis & Fleet Efficiency) */}
-      <AnalyticsPlaceholder state={simulationState} benchmark={benchmark} />
+      {/* 5. Analytics Panels (Fuel Consumption Analysis & Fleet Efficiency) */}
+      <AnalyticsPlaceholder
+        routes={simulationState?.routes || []}
+        baselineAssignments={simulationState?.baseline_assignments || []}
+        greenflowAssignments={simulationState?.greenflow_assignments || []}
+        isOptimized={isOptimized}
+        benchmark={benchmark}
+      />
 
-      {/* 5. Comparative Evaluation: Baseline vs GreenFleet */}
-      <BeforeAfter benchmark={benchmark} />
+      {/* 6. Comparative Evaluation: Baseline vs GreenFleet */}
+      <BeforeAfter
+        benchmark={benchmark}
+        isOptimized={isOptimized}
+      />
+
+      {/* 7. Commercial Decision Support Modals */}
+      <WhatIfSimulatorModal
+        isOpen={isWhatIfOpen}
+        onClose={() => setIsWhatIfOpen(false)}
+      />
+
+      <ScenarioMatrixModal
+        isOpen={isScenariosOpen}
+        onClose={() => setIsScenariosOpen(false)}
+      />
+
+      <ShiftSummaryModal
+        isOpen={isShiftSummaryOpen}
+        onClose={() => setIsShiftSummaryOpen(false)}
+        simulationState={simulationState}
+        benchmark={benchmark}
+        economics={economics}
+      />
     </main>
   )
 }
+
